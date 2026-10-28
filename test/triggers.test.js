@@ -164,6 +164,7 @@ test('a control character (decoded \\b) is rejected and the skill falls back', a
   const a = fake(() => ok([{ name: 'alpha', priority: 2, rules: [[JSON.parse('"\\b(goroutine)\\b"')]] }]));
   const r = await aiTriggers(a, skills, {}, new Recorder());
   assert.deepEqual(r.rejected.map((x) => x.error), ['contains a control character']);
+  assert.equal(r.rejected[0].pattern, '\\u0008(goroutine)\\u0008');
   assert.deepEqual(r.fellBack, ['alpha']);
   assert.ok(matches(r.bySkill.get('alpha').rules, 'zebra'));
 });
@@ -186,12 +187,22 @@ test('no rules at all: omitted from bySkill, listed in fellBack', async () => {
   assert.deepEqual(r.fellBack, ['x']);
 });
 
-test('at most 4 rules kept, effort passed through, name capped in prompt', async () => {
+test('at most 4 rules kept, effort passed through, long names still match', async () => {
   const long = 'n'.repeat(300);
-  const a = fake(() => ok([{ name: long, priority: 5, rules: [1, 2, 3, 4, 5, 6].map((i) => [`\\bzeb${i}\\b`]) }]));
+  const a = fake(({ prompt }) => {
+    assert.ok(prompt.includes(JSON.stringify(long))); // the model sees the full name
+    return ok([{ name: long, priority: 5, rules: [1, 2, 3, 4, 5, 6].map((i) => [`\\bzeb${i}\\b`]) }]);
+  });
   const r = await aiTriggers(a, [{ name: long, description: 'Use when zebra' }], { model: 'haiku', effort: 'low' }, new Recorder());
   assert.equal(a.calls[0].effort, 'low');
-  assert.ok(!a.calls[0].prompt.includes('n'.repeat(101)));
   assert.deepEqual(r.fellBack, []);
   assert.equal(r.bySkill.get(long).rules.length, 4);
+});
+
+test('R30: topic words survive the generic-prompt guard', async () => {
+  const skills = [{ name: 'alpha', description: 'Use when parsing zebra' }];
+  const a = fake(() => ok([{ name: 'alpha', priority: 2, rules: [['\\bmerge\\b'], ['\\bthink\\b']] }]));
+  const r = await aiTriggers(a, skills, {}, new Recorder());
+  assert.deepEqual(r.rejected, []);
+  assert.deepEqual(r.bySkill.get('alpha').rules, [['\\bmerge\\b'], ['\\bthink\\b']]);
 });
