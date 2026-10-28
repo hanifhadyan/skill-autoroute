@@ -69,7 +69,7 @@ function setup() {
   const run = (...args) => runEnv({}, ...args);
   const readCalls = () => (existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
   return {
-    home, proj, run, runEnv, readCalls, skills,
+    home, proj, bin, run, runEnv, readCalls, skills,
     routes: join(home, '.config', 'skill-autoroute', 'routes.json'),
     settings: join(home, '.claude', 'settings.json'),
     cleanup: () => { h.cleanup(); aux.cleanup(); },
@@ -199,6 +199,29 @@ test('install --yes --ai claude runs scan, dedupe and triggers; --log and --mode
     assert.deepEqual(by2.alpha.patterns, by.alpha.patterns);
     assert.notEqual(by2['vibe-security'].hash, by['vibe-security'].hash);
     assert.equal(t2.log, true);
+  } finally { s.cleanup(); }
+});
+
+// Fake `codex`: every call answers {"ok":true} (other steps fall back to static or keyword results).
+const codexScript = `
+const ev = [{ type: 'item.completed', item: { type: 'agent_message', text: '{"ok":true}' } },
+  { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 2 } }];
+for (const e of ev) console.log(JSON.stringify(e));`;
+
+test('codex fallback model (no preferred model listed) is named in the install summary', () => {
+  const s = setup();
+  try {
+    fakeCli(s.bin, 'codex', codexScript);
+    const a = s.run('install', '--yes', '--tools', 'claude', '--ai', 'codex');
+    assert.equal(a.code, 0, a.out);
+    assert.match(a.out, /codex: codex default model \(no preferred model listed\)/);
+    mkdirSync(join(s.home, '.codex'), { recursive: true });
+    writeFileSync(join(s.home, '.codex', 'config.toml'), 'model = "my-gw-model"\n');
+    const b = s.run('install', '--yes', '--tools', 'claude', '--ai', 'codex');
+    assert.equal(b.code, 0, b.out);
+    assert.match(b.out, /codex: model from your config \(no preferred model listed\)/);
+    const c = s.run('install', '--yes', '--tools', 'claude', '--ai', 'codex', '--model', 'probe=x', '--model', 'scan=x', '--model', 'dedupe=x', '--model', 'triggers=x');
+    assert.doesNotMatch(c.out, /no preferred model listed/, 'overrides never fall back');
   } finally { s.cleanup(); }
 });
 

@@ -63,6 +63,7 @@ function context(aiName, o) {
 const model = (ctx, step) => {
   const m = pickModel(ctx.aiName, step, ctx.overrides);
   ctx.used[step] = `${m.model ?? 'codex default'}/${m.effort}`;
+  if (m.fallback) ctx.fellBack = m.model ?? null; // Ruling R42: summary() says the preferred model was not listed
   return { model: m.model, effort: m.effort };
 };
 
@@ -233,6 +234,7 @@ function summary(ctx, gen, notes, ui) {
   if (gen.fellBack.length) ui.log(`keyword fallback (lower quality) or no rules: ${gen.fellBack.map(show).join(', ')}`);
   if (gen.mode === 'keywords') ui.log('Triggers come from keywords (no AI); quality is lower.');
   for (const n of notes ?? []) if (n.note) ui.log(`${n.tool}: ${show(n.note)}`);
+  if (ctx.fellBack !== undefined) ui.log(`codex: ${ctx.fellBack ? 'model from your config' : 'codex default model'} (no preferred model listed)`);
   if (Object.keys(ctx.used).length) ui.log(`models: ${Object.entries(ctx.used).map(([s, m]) => `${s}=${m}`).join(' ')}`);
   if (ctx.rec.rows().length) ui.log(showLines(formatReport(ctx.rec.totals(), ctx.est)));
 }
