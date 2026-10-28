@@ -9,7 +9,7 @@ import { scanStatic, label } from './scan/static.js';
 import { aiScan, mergeScan } from './scan/ai.js';
 import { candidateGroups, aiDedupe, MAX_GROUP } from './dedupe.js';
 import { aiTriggers, keywordRules, TRIGGER_PROMPT } from './triggers.js';
-import { estimate, Recorder, formatReport, writeReport, hookReport } from './usage.js';
+import { estimate, Recorder, formatReport, writeReport, hookReport, num } from './usage.js';
 import { readTable, writeTable, mergeTables } from './table.js';
 import { pickModel } from './models.js';
 import { routesPath, reportPath, hookCopyPath, logPath } from './paths.js';
@@ -32,11 +32,14 @@ const size = (f) => { try { return statSync(f).size; } catch { return 0; } };
 // Project tables store paths relative to the project root so the folder can move or be cloned (the hook resolves them).
 const keyOf = (scope) => (p) => (scope === 'project' ? relative(process.cwd(), p).split(sep).join('/') : p);
 const forHook = (scope, t) => (scope === 'project' ? resolveProject(t, process.cwd()) : t);
+const NO_HINT = '(no hints for this prompt: no checked skill has a rule whose words all appear in it. Rules match whole words, so a typo or a word the rules do not list gives no hint.)';
 const AI_NOTE = 'AI flagged this (details in the install output)';
 
 // Non-interactive ui: every prompt takes its default; AI steps run (spec: --yes never prompts).
+// progress(max) returns {next(label), done(message)}: next() marks the previous item finished and names the current one.
+const quietProgress = () => ({ next() {}, done() {} });
 export const plainUi = (log = console.log) => ({
-  yes: true, log, confirm: async () => true, select: async (_m, _o, d) => d, multiselect: async (_m, _o, d) => d, text: async () => '',
+  yes: true, log, confirm: async () => true, select: async (_m, _o, d) => d, multiselect: async (_m, _o, d) => d, text: async () => '', progress: quietProgress,
 });
 
 export function findTools() {
@@ -81,11 +84,18 @@ export async function probe(ctx) {
   ctx.est.probe = { input: ctx.overhead, cacheRead: ctx.cacheOverhead, output: usage.output ?? 0 };
 }
 
+const WHY = {
+  scan: 'an AI reads every file of each skill and looks for risky instructions (secrets sent out, remote code, hidden prompts)',
+  dedupe: 'an AI compares skills with the same name and picks the one to keep',
+  triggers: 'an AI writes the word patterns that decide which prompts get a hint for each skill',
+};
+const calls = (step, n) => (step === 'triggers' ? Math.ceil(n / BATCH) : n);
+
 async function aiStep(ctx, ui, step, items, what) {
   if (!ctx.ai || !items.length) return false;
   const e = (ctx.est[step] = estimates(step, items, ctx.overhead, ctx.cacheOverhead));
   const m = pickModel(ctx.aiName, step, ctx.overrides);
-  ui.log(`${what}: ${step === 'triggers' ? Math.ceil(items.length / BATCH) : items.length} calls with ${m.model ?? 'codex default'}/${m.effort}, est input ${e.input}, est cache-read ${e.cacheRead}, est output ${e.output} tokens (estimate)`);
+  ui.log(`${what}: ${WHY[step]}.\n${num(calls(step, items.length))} calls with ${m.model ?? 'codex default'}/${m.effort}, est input ${num(e.input)}, est cache-read ${num(e.cacheRead)}, est output ${num(e.output)} tokens (estimate)`);
   return ui.confirm(`Run ${what}?`, true);
 }
 
@@ -93,13 +103,18 @@ export async function runScans(skills, ctx, ui) {
   const scans = new Map(skills.map((s) => [s.skillPath, scanStatic(s)]));
   if (await aiStep(ctx, ui, 'scan', skills, 'AI deep scan')) {
     const m = model(ctx, 'scan');
-    for (const s of skills) {
-      const calls = ctx.rec.rows().length;
+    const bar = ui.progress(skills.length);
+    const failed = [];
+    for (const [i, s] of skills.entries()) {
+      bar.next(`AI deep scan ${i + 1}/${skills.length}: ${show(s.name)}`);
+      const before = ctx.rec.rows().length;
       const r = await aiScan(ctx.ai, s, m, ctx.rec);
       // aiScan swallows errors; no recorded call means the call failed
-      if (ctx.rec.rows().length === calls) ui.log(`AI scan failed for ${show(s.name)}; static result kept`);
+      if (ctx.rec.rows().length === before) failed.push(show(s.name));
       else scans.set(s.skillPath, mergeScan(scans.get(s.skillPath), r));
     }
+    bar.done(`AI deep scan done: ${skills.length - failed.length} of ${skills.length} skills scanned`);
+    if (failed.length) ui.log(`AI scan failed for ${failed.join(', ')}; static result kept`);
   }
   return scans;
 }
@@ -110,17 +125,22 @@ export async function runDedupe(skills, ctx, ui) {
   const groups = candidateGroups(skills);
   if (!(await aiStep(ctx, ui, 'dedupe', groups, 'duplicate comparison'))) return out;
   const m = model(ctx, 'dedupe');
-  for (const all of groups) {
+  const bar = ui.progress(groups.length);
+  const failed = [];
+  for (const [i, all] of groups.entries()) {
     const g = all.slice(0, MAX_GROUP);
+    bar.next(`duplicate comparison ${i + 1}/${groups.length}: ${show(all[0].name)} (${all.length} copies)`);
     for (const s of all.slice(MAX_GROUP)) out.set(s.skillPath, { tooLarge: true });
     const v = await aiDedupe(ctx.ai, g, m, ctx.rec);
-    if (!v.keep) { ui.log(`duplicate comparison failed for ${g.map((s) => show(s.name)).join(', ')}; all kept as found`); continue; }
+    if (!v.keep) { failed.push(g.map((s) => show(s.name)).join(', ')); continue; }
     const keep = g.find((s) => s.skillPath === v.keep);
     for (const s of g) {
       const reason = v.reasons[s.skillPath] ?? '';
       out.set(s.skillPath, s === keep ? { preferred: true, reason } : { of: keep.name, from: `${keep.tool}, ${keep.source}`, reason });
     }
   }
+  bar.done(`duplicate comparison done: ${groups.length} group${groups.length === 1 ? '' : 's'}`);
+  for (const f of failed) ui.log(`duplicate comparison failed for ${f}; all kept as found`);
   return out;
 }
 
@@ -134,20 +154,27 @@ export function buildRows(skills, scans, dupes = new Map()) {
     return { skill, scan, dup, enabled: scan.verdict !== 'block' && !dup?.of, text: parts.join(' · ') };
   });
 }
+// Picker group: the plugin a skill ships in, or the tool's own skills folder.
+export const groupOf = (s) => (String(s.source).startsWith('plugin:') ? `plugin ${show(String(s.source).slice(7))}` : `${s.tool} ${show(s.source)} skills`);
 const rowText = (r, on) => (on ? r.text : `${r.text} · still loaded by ${r.skill.tool}`);
 const printRows = (rows, ui) => { for (const r of rows) ui.log(`[${r.enabled ? 'x' : ' '}] ${rowText(r, r.enabled)}`); };
 
 async function pickRows(rows, ui) {
   if (ui.yes) { printRows(rows, ui); return rows; }
   const idx = await ui.multiselect('Skills to route (unchecked skills stay installed, they only get no hints)',
-    rows.map((r, i) => ({ value: i, label: rowText(r, r.enabled) })), rows.flatMap((r, i) => (r.enabled ? [i] : [])));
+    rows.map((r, i) => ({ value: i, label: rowText(r, r.enabled), group: groupOf(r.skill) })), rows.flatMap((r, i) => (r.enabled ? [i] : [])));
   return rows.map((r, i) => ({ ...r, enabled: idx.includes(i) }));
 }
 
 // Returns {bySkill: Map name -> {priority, rules}, rejected, fellBack, mode}.
 export async function generate(skills, ctx, ui) {
   if (await aiStep(ctx, ui, 'triggers', skills, 'trigger generation')) {
-    return { mode: 'ai', ...(await aiTriggers(ctx.ai, skills, model(ctx, 'triggers'), ctx.rec)) };
+    const n = calls('triggers', skills.length);
+    const bar = ui.progress(n);
+    const r = await aiTriggers(ctx.ai, skills, model(ctx, 'triggers'), ctx.rec,
+      (i, batch) => bar.next(`trigger generation ${i + 1}/${n}: ${show(batch[0].name)} to ${show(batch[batch.length - 1].name)} (${batch.length} skills)`));
+    bar.done(`trigger generation done: ${num(skills.length)} skills in ${n} call${n === 1 ? '' : 's'}`);
+    return { mode: 'ai', ...r };
   }
   const bySkill = new Map();
   for (const s of skills) { const k = keywordRules(s); if (k.rules.length) bySkill.set(s.name, k); }
@@ -218,8 +245,10 @@ async function prelude(o, ui) {
   const ctx = context(aiName, o);
   if (ctx.ai) {
     try {
-      await probe(ctx);
-      ui.log(`probe: ${aiName} login works; fixed overhead ${ctx.overhead} input tokens per call (1 call)`);
+      const bar = ui.progress(1);
+      bar.next(`checking the ${aiName} login (1 small call)`);
+      try { await probe(ctx); } finally { bar.done('login check finished'); }
+      ui.log(`probe: ${aiName} login works; fixed overhead ${num(ctx.overhead)} input tokens per call (1 call)`);
     } catch (e) {
       ui.log(`probe failed: ${show(e.message)}`);
       if (!(await ui.confirm('Continue with keywords only (no AI)?', true))) throw new Cancel();
@@ -241,7 +270,7 @@ function dryRun(ctx, skills, ui) {
   for (const [step, items] of [['scan', skills], ['dedupe', candidateGroups(skills)], ['triggers', statics]]) {
     const e = estimates(step, items, ctx.overhead, ctx.cacheOverhead);
     const m = pickModel(ctx.aiName, step, ctx.overrides);
-    ui.log(`${step}: ${step === 'triggers' ? Math.ceil(items.length / BATCH) : items.length} calls, ${m.model ?? 'codex default'}/${m.effort}, est input ${e.input}, est cache-read ${e.cacheRead}, est output ${e.output} tokens`);
+    ui.log(`${step}: ${num(calls(step, items.length))} calls, ${m.model ?? 'codex default'}/${m.effort}, est input ${num(e.input)}, est cache-read ${num(e.cacheRead)}, est output ${num(e.output)} tokens`);
   }
   ui.log('est = estimate (characters / 4 plus the measured input and cache-read per call); the probe above was 1 real call.');
 }
@@ -267,7 +296,7 @@ export async function install(o, ui) {
   while (!ui.yes) {
     const p = await ui.text('Preview: type a prompt to see its hints (empty to finish)');
     if (!p) break;
-    ui.log(show(route(p, forHook(scope, table)) ?? '(no hints for this prompt)'));
+    ui.log(show(route(p, forHook(scope, table)) ?? NO_HINT));
   }
   const notes = write(scope, table, tools, ctx);
   if (tools.filter((t) => ADAPTERS[t].hookConfig(scope)).every((t) => selfTest(scope, t))) ui.log('self-test: hook ran and its output has the right shape');
@@ -376,7 +405,7 @@ export async function bench(o, ui) {
     try {
       const off = await call(p, true);
       const on = await call(p, false);
-      ui.log(`${i + 1}. ${p.slice(0, 40)}  ${off}  ${on}  ${on - off >= 0 ? '+' : ''}${on - off}`);
+      ui.log(`${i + 1}. ${p.slice(0, 40)}  ${num(off)}  ${num(on)}  ${on - off >= 0 ? '+' : ''}${num(on - off)}`);
     } catch (e) { ui.log(`${i + 1}. failed: ${show(e.message)}`); }
   }
   ui.log('Numbers include your normal context (settings, hooks, MCP, instructions); only the difference comes from the hook. Small differences can be cache noise.');

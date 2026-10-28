@@ -1,0 +1,10 @@
+flowchart TB
+    subgraph U["👤 User level (default)"]
+      U1["~/.config/skill-autoroute/<br/>route.mjs + routes.json"]
+    end
+    subgraph P["📁 Project level (--project)"]
+      P1[".skill-autoroute/<br/>route.mjs + routes.json<br/><sub>commit it for your team</sub>"]
+    end
+    U1 --> M{"Hook merges both<br/><sub>project wins on same name</sub>"}
+    P1 --> M
+    M --> R["Hints"]

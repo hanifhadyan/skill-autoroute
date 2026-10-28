@@ -75,6 +75,7 @@ Lessons from rules that went wrong:
 - Never use .* or .+ between words. For "A then later B" write two patterns in one rule, such as ["\\\\bA\\\\b", "\\\\bB\\\\b"], so both must match.
 - No nested quantifiers like (a+)+. Keep each pattern under 200 characters. JavaScript syntax, no lookbehind.
 - Do not write a pattern that matches almost every prompt. A skill with no clear trigger gets a narrow rule or priority 90 to 100.
+- Rules that only match the skill's own name or jargon never fire: users describe the task, not the skill. Give each skill at least one rule built from the everyday words a user types for that task, with common synonyms and word forms in one group. A planning skill: "\\\\b(plan|planning|blueprint|roadmap|spec)\\\\b". An API skill: "\\\\b(endpoint|api|route|webhook)s?\\\\b". A brainstorming skill: "\\\\b(brainstorm\\\\w*|ideas?|ideate)\\\\b". Pair a common word with a task word in one rule when the word alone is too broad.
 
 <${tag}>
 ${lines.join('\n')}
@@ -85,7 +86,8 @@ const clampPriority = (p) =>
   typeof p === 'number' && Number.isFinite(p) ? Math.min(100, Math.max(1, Math.round(p))) : FALLBACK_PRIORITY;
 
 /** bySkill holds only skills that ended with at least one rule; skills with none are listed in fellBack only. */
-export async function aiTriggers(adapter, skills, { model, effort } = {}, recorder) {
+// onBatch(index, batch) runs before each call, for a progress bar.
+export async function aiTriggers(adapter, skills, { model, effort } = {}, recorder, onBatch = () => {}) {
   const bySkill = new Map();
   const rejected = [];
   const fellBack = [];
@@ -96,6 +98,7 @@ export async function aiTriggers(adapter, skills, { model, effort } = {}, record
   };
   for (let i = 0; i < skills.length; i += BATCH) {
     const batch = skills.slice(i, i + BATCH);
+    onBatch(i / BATCH, batch);
     let entries = null;
     try {
       const { json, usage } = await adapter.headless({ prompt: TRIGGER_PROMPT(batch), schema: TRIGGER_SCHEMA, model, effort });

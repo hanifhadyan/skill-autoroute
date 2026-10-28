@@ -301,7 +301,7 @@ test('a failed AI scan call is reported and the static result is kept', () => {
   try {
     const r = s.runEnv({ SA_FAIL_SCAN: '1' }, 'install', '--yes', '--tools', 'claude', '--ai', 'claude');
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /AI scan failed for alpha; static result kept/);
+    assert.match(r.out, /AI scan failed for (.*, )?alpha(, .*)?; static result kept/);
     assert.match(r.out, /alpha {2}claude · no issues found(?! \(partial)/);
   } finally { s.cleanup(); }
 });

@@ -1,0 +1,6 @@
+flowchart LR
+    P["You type a prompt"] --> H{"Hook checks<br/>trigger table"}
+    H -- "match" --> Y["Adds one hint line<br/><sub>≤ 3 skills, ~60 tokens each</sub>"]
+    H -- "no match" --> N["Adds nothing<br/><sub>0 tokens</sub>"]
+    Y --> AG["Agent reads the skill<br/>and does the work"]
+    N --> AG

@@ -45,12 +45,12 @@ test('formatReport: estimates are marked est, input and cache-read stay separate
   r.add('duplicates', { input: 300, cacheRead: 0, output: 40, model: 'sonnet' });
   const text = formatReport(r.totals(), { triggers: { input: 120, output: 30 } });
   const lines = text.split('\n');
-  assert.match(lines.find((l) => l.startsWith('triggers')), /haiku +1 +100 \(est 120\) +10 +20 \(est 30\)/);
-  assert.match(lines.find((l) => l.startsWith('duplicates')), /est n\/a/);
+  assert.match(lines.find((l) => l.startsWith('triggers')), /haiku +1 +100 +120 +10 +n\/a +20 +30$/);
+  assert.match(lines.find((l) => l.startsWith('duplicates')), /300 +n\/a/);
   const total = lines.find((l) => l.startsWith('total'));
-  assert.match(total, /400 \(est n\/a\)/); // an incomplete estimate is not presented as a total
+  assert.match(total, /400 +n\/a/); // an incomplete estimate is not presented as a total
   const full = formatReport(r.totals(), { triggers: { input: 120, output: 30 }, duplicates: { input: 350, output: 50 } });
-  assert.match(full.split('\n').find((l) => l.startsWith('total')), /400 \(est 470\) +10 +60 \(est 80\)/);
+  assert.match(full.split('\n').find((l) => l.startsWith('total')), /400 +470 +10 +n\/a +60 +80$/);
   assert.match(text, /est = estimate/);
   assert.doesNotMatch(text, /sav(e|ed|es|ing)/i);
   assert.match(text, /adds tokens/);
@@ -119,6 +119,17 @@ test('formatReport shows an est next to cache-read when the estimate has one', (
   const r = new Recorder();
   r.add('scan', { input: 100, cacheRead: 2000, output: 20, model: 'm' });
   const text = formatReport(r.totals(), { scan: { input: 120, cacheRead: 2142, output: 30 } });
-  assert.match(text.split('\n').find((l) => l.startsWith('scan')), /100 \(est 120\) +2000 \(est 2142\) +20 \(est 30\)/);
-  assert.match(text.split('\n').find((l) => l.startsWith('total')), /2000 \(est 2142\)/);
+  assert.match(text.split('\n').find((l) => l.startsWith('scan')), /100 +120 +2,000 +2,142 +20 +30$/);
+  assert.match(text.split('\n').find((l) => l.startsWith('total')), /2,000 +2,142/);
+});
+
+test('formatReport: thousands separators and right-aligned number columns', () => {
+  const r = new Recorder();
+  r.add('scan', { input: 515450, cacheRead: 322626, output: 19632, model: 'claude-sonnet-5-5' });
+  r.add('probe', { input: 3410, cacheRead: 1081, output: 52, model: 'claude-haiku-5-5' });
+  const lines = formatReport(r.totals(), { scan: { input: 632860, cacheRead: 111343, output: 15450 }, probe: { input: 3410, cacheRead: 1081, output: 52 } }).split('\n');
+  assert.match(lines.find((l) => l.startsWith('scan')), /515,450 +632,860 +322,626 +111,343 +19,632 +15,450$/);
+  assert.match(lines.find((l) => l.startsWith('total')), /518,860 +636,270/);
+  const head = lines[0], probe = lines.find((l) => l.startsWith('probe'));
+  assert.equal(probe.indexOf('3,410') + 5, head.indexOf('input') + 5); // right edges line up under the header
 });
