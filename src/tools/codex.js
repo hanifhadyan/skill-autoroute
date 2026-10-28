@@ -26,6 +26,7 @@ export function installHook(scope, command) {
 }
 export const removeHook = (scope) => (scope === 'project' ? { ...NO_PROJECT } : removeHookFrom(hooksFile()));
 export const hasHook = () => hasHookIn(hooksFile()); // codex has only the user-level hook
+export const hookConfig = (scope) => (scope === 'project' ? null : hooksFile());
 
 export async function headless({ prompt, schema, model, effort, timeoutMs, loadUserSettings = false, env }) {
   checkPrompt(prompt);

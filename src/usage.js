@@ -3,8 +3,9 @@ import { writeTable } from './table.js';
 const tokens = (chars) => Math.ceil(chars / 4);
 const HINT_PREFIX = 'Skills that fit this work (read each SKILL.md before you start): '; // same text as hook/route.js
 
-export function estimate({ chars = 0, calls = 0, overheadPerCall = 0, outputPerItem = 0, items = 0 } = {}) {
-  return { input: tokens(chars) + calls * overheadPerCall, output: items * outputPerItem };
+// overheadPerCall and cacheReadPerCall come from the probe's real usage (input and cache-read, kept apart like the report).
+export function estimate({ chars = 0, calls = 0, overheadPerCall = 0, cacheReadPerCall = 0, outputPerItem = 0, items = 0 } = {}) {
+  return { input: tokens(chars) + calls * overheadPerCall, cacheRead: calls * cacheReadPerCall, output: items * outputPerItem };
 }
 
 export class Recorder {
@@ -30,12 +31,13 @@ const pad = (v, n) => String(v).padEnd(n);
 // Input and cache-read are separate columns on purpose: Codex may or may not count cached tokens inside input.
 export function formatReport(totals = {}, estimates = {}) {
   const est = (n) => (n == null ? 'est n/a' : `est ${n}`);
+  const withEst = (v, n) => (n == null ? v : `${v} (est ${n})`); // older estimates have no cache-read part
   const rows = Object.entries(totals).map(([step, t]) => [
-    step, t.model ?? '-', t.calls, `${t.input} (${est(estimates[step]?.input)})`, t.cacheRead, `${t.output} (${est(estimates[step]?.output)})`,
+    step, t.model ?? '-', t.calls, `${t.input} (${est(estimates[step]?.input)})`, withEst(t.cacheRead, estimates[step]?.cacheRead), `${t.output} (${est(estimates[step]?.output)})`,
   ]);
   const sum = (f) => Object.values(totals).reduce((a, t) => a + f(t), 0);
   const estSum = (k) => (Object.keys(totals).every((s) => estimates[s]?.[k] != null) ? Object.keys(totals).reduce((a, s) => a + estimates[s][k], 0) : null);
-  rows.push(['total', '', sum((t) => t.calls), `${sum((t) => t.input)} (${est(estSum('input'))})`, sum((t) => t.cacheRead), `${sum((t) => t.output)} (${est(estSum('output'))})`]);
+  rows.push(['total', '', sum((t) => t.calls), `${sum((t) => t.input)} (${est(estSum('input'))})`, withEst(sum((t) => t.cacheRead), estSum('cacheRead')), `${sum((t) => t.output)} (${est(estSum('output'))})`]);
   const head = ['step', 'model', 'calls', 'input', 'cache-read', 'output'];
   const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
   const line = (r) => r.map((c, i) => pad(c, w[i])).join('  ').trimEnd();

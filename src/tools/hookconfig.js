@@ -72,6 +72,9 @@ export function removeHook(configPath) {
   return { changed: true };
 }
 
+// Throws (naming the file) when addHook would refuse it; used to check every config before any write.
+export const checkConfig = (configPath) => { load(configPath); };
+
 // False when the file is missing or unreadable.
 export function hasHook(configPath) {
   try { return (load(configPath).cfg.hooks?.[EVENT] ?? []).some((g) => groupHooks(g).some(ours)); } catch { return false; }
@@ -81,6 +84,13 @@ export function hasHook(configPath) {
 export function installHookCopy(scope) {
   const dest = hookCopyPath(scope);
   mkdirSync(dirname(dest), { recursive: true });
-  copyFileSync(fileURLToPath(new URL('../../hook/route.js', import.meta.url)), dest);
+  const tmp = `${dest}.tmp-${process.pid}`;
+  try {
+    copyFileSync(fileURLToPath(new URL('../../hook/route.js', import.meta.url)), tmp);
+    renameSync(tmp, dest);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* nothing to clean */ }
+    throw e;
+  }
   return scope === 'project' ? 'node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs"' : `node "${dest}"`;
 }

@@ -15,9 +15,10 @@ const table = (skills) => ({ version: 1, generatedAt: '2026-10-28T10:00:00Z', sk
 test('estimate: chars/4 rounded up plus overhead per call; output is items * outputPerItem', () => {
   assert.deepEqual(
     estimate({ chars: 10001, calls: 3, overheadPerCall: PROBE_OVERHEAD, outputPerItem: 200, items: 7 }),
-    { input: 2501 + 3 * PROBE_OVERHEAD, output: 1400 },
+    { input: 2501 + 3 * PROBE_OVERHEAD, cacheRead: 0, output: 1400 },
   );
-  assert.deepEqual(estimate({ chars: 0, calls: 0, overheadPerCall: 0, outputPerItem: 0, items: 0 }), { input: 0, output: 0 });
+  assert.deepEqual(estimate({ chars: 0, calls: 0, overheadPerCall: 0, outputPerItem: 0, items: 0 }), { input: 0, cacheRead: 0, output: 0 });
+  assert.deepEqual(estimate({ chars: 4, calls: 2, overheadPerCall: 3, cacheReadPerCall: 1071 }), { input: 7, cacheRead: 2142, output: 0 });
 });
 
 test('Recorder: rows keep each call, totals sum two rows of the same step', () => {
@@ -112,4 +113,12 @@ test('hookReport: no log lines says so and invents no numbers', () => {
   const text = hookReport(table([skill('a')]), []);
   assert.match(text, /no usage log entries/i);
   assert.doesNotMatch(text, /per fire/);
+});
+
+test('formatReport shows an est next to cache-read when the estimate has one', () => {
+  const r = new Recorder();
+  r.add('scan', { input: 100, cacheRead: 2000, output: 20, model: 'm' });
+  const text = formatReport(r.totals(), { scan: { input: 120, cacheRead: 2142, output: 30 } });
+  assert.match(text.split('\n').find((l) => l.startsWith('scan')), /100 \(est 120\) +2000 \(est 2142\) +20 \(est 30\)/);
+  assert.match(text.split('\n').find((l) => l.startsWith('total')), /2000 \(est 2142\)/);
 });

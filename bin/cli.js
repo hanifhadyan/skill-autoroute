@@ -60,7 +60,7 @@ try {
     console.log('Cancelled. Nothing was written.');
     process.exitCode = 1;
   } else {
-    console.error(`skill-autoroute: ${e.message}`);
+    console.error(`skill-autoroute: ${flow.show(e.message)}`);
     process.exitCode = 1;
   }
 }

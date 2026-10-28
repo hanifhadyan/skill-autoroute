@@ -49,7 +49,8 @@ function pick(prompt, table, statMtime) {
     .filter((s) => !seen.has(s.name) && seen.add(s.name))
     .slice(0, MAX_HINTS);
   if (!hits.length) return null;
-  let out = 'Skills that fit this work (read each SKILL.md before you start): ' + hits.map((s) => `${s.name} (${s.path})`).join('; ') + '.';
+  const safe = (v) => v.replace(/[\u0000-\u001f\u007f-\u009f]/g, ''); // skill text goes into model context
+  let out = 'Skills that fit this work (read each SKILL.md before you start): ' + hits.map((s) => `${safe(s.name)} (${safe(s.path)})`).join('; ') + '.';
   const n = staleCount(table, statMtime);
   if (n) out += `\n${n} skills changed since the last generate. Run: npx skill-autoroute regenerate`;
   return { out, count: hits.length };

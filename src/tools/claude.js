@@ -36,6 +36,7 @@ export function skillDirs(scope) {
 export const installHook = (scope, command) => addHook(settings(scope), command);
 export const removeHook = (scope) => removeHookFrom(settings(scope));
 export const hasHook = (scope) => hasHookIn(settings(scope));
+export const hookConfig = (scope) => settings(scope);
 
 // loadUserSettings (bench only): keep the user's settings, hooks and MCP so the routing hook fires.
 export async function headless({ prompt, schema, model, effort, timeoutMs, loadUserSettings = false, env }) {

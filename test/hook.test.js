@@ -245,3 +245,10 @@ test('a table with "log": true logs without the env var (user or project table);
     } finally { s.cleanup(); }
   }
 });
+
+test('control characters in a skill name or path never reach the hint (R36)', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [sk('ev\u001b[31mil\u0007', [['secretword']], 10, { path: '/s/a\u001b]0;pwned\u0007/SKILL.md' })] };
+  const out = route('secretword', t, () => 0);
+  assert.ok(out && !/[\u0000-\u001f\u007f-\u009f]/.test(out), JSON.stringify(out));
+  assert.match(out, /ev\[31mil \(\/s\/a\]0;pwned\/SKILL\.md\)/);
+});
