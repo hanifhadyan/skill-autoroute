@@ -19,7 +19,9 @@ export const STOP_WORDS = new Set(`${BASE_STOP} ${MORE_STOP}`.split(/\s+/));
 // R29: a rule that fires on any of these is a catch-all and is dropped.
 const GENERIC_PROMPTS = ['hello', 'thanks', 'go ahead', 'please fix this', 'yes', 'continue', 'sounds good', 'ok do it',
   'fix it', 'run it', 'check this', 'ask the agent', 'use the workflow', 'look at the spec', 'open the chat', 'build it'];
-const isGeneric = (rule) => GENERIC_PROMPTS.some((t) => rule.every((p) => new RegExp(p, 'i').test(t)));
+// The first generic prompt the rule fires on, or undefined.
+export const genericMatch = (rule) => GENERIC_PROMPTS.find((t) => rule.every((p) => new RegExp(p, 'i').test(t)));
+const isGeneric = (rule) => genericMatch(rule) !== undefined;
 const CONTROL = /[\u0000-\u001f]/;
 const MAX_RULES = 6;
 // Bump when TRIGGER_PROMPT or rule limits change: regenerate then rebuilds every skill's rules.

@@ -102,7 +102,7 @@ prefer to install them as a skill.
 | 🔑 **No API key**         | Uses the `claude` or `codex` CLI you are already logged in to.                                            |
 | 🛡️ **Security scan**     | Flags remote code runs, hidden text, prompt injection, secret theft, and more.                            |
 | 👯 **Duplicate check**    | Finds look-alike skills, and the AI says which is better and why. You still decide.                       |
-| 💸 **Small models**       | Haiku or a small Codex model for triggers. Sonnet or a mid Codex model for judgment. Never the top model. |
+| 💸 **No top model**       | Sonnet or a mid Codex model writes triggers and judges skills. Haiku or a small model checks the login. Never the top model. |
 | 📊 **Real token numbers** | Shows the estimate first, then the real usage. Saved in `install-report.json`.                            |
 | 🧹 **Clean uninstall**    | Removes only its own hook entries. Your other hooks stay.                                                 |
 
@@ -180,6 +180,56 @@ codex-cli 0.164.0. Your numbers will differ.
 
 ---
 
+## Hint quality
+
+A wrong hint costs tokens and teaches the agent to ignore hints, so the trigger rules aim for precise hints, not many
+hints. Measured on 2026-10-28 on 1,616 real prompts from one developer's Claude Code history, with 148 installed skills.
+Sonnet graded 90 sampled prompts blind (was each hinted skill useful for that prompt?). A fixed check has 13 prompts with
+a known answer, 5 of which must get no hint.
+
+
+| Trigger rules                              | Precision | Relative recall | Useful / wrong hints | Hint tokens per prompt | Fixed check |
+| ------------------------------------------ | --------- | --------------- | -------------------- | ---------------------- | ----------- |
+| 0.2.0 (haiku)                              | 35.5%     | 50.0%           | 22 / 40              | 12.9                   | 10/13       |
+| Broad single-word rules (haiku)            | 21.0%     | 59.1%           | 26 / 98              | 24.1                   | 9/13        |
+| **0.3.0: task word plus object word (sonnet)** | **59.1%** | **59.1%**   | **26 / 18**          | **10.8**               | **12/13**   |
+
+
+Relative recall is the share of all useful hints that any version found. Broader rules doubled the hints but most of the
+new ones were wrong. Guessing the kind of work from the prompt (question, change, risky) to gate or add hints was also
+tested and made hints worse (F1 63.2 down to 55.7), so it is not used.
+
+Examples with 0.3.0:
+
+| Prompt                                | Hint                    |
+| ------------------------------------- | ----------------------- |
+| add a column to the users table       | `database-migrations`   |
+| make this landing page responsive     | `impeccable`            |
+| add a webhook endpoint to the API     | `api-design`            |
+| write a PR description                | `pr-description`        |
+| yes / continue / ok now ask the agent | no hint                 |
+
+When a rule misses a phrase you use, add [your own trigger words](#your-own-trigger-words).
+
+---
+
+## Your own trigger words
+
+The AI-written rules miss some phrasings. Add the words you really type:
+
+```bash
+npx skill-autoroute words no-ai-slop add polish proofread "README text"
+npx skill-autoroute words                       # list every skill's own words
+npx skill-autoroute words no-ai-slop remove polish
+```
+
+- Each word or phrase matches as a whole word, case-insensitive. It is plain text, not a regex.
+- A match on your own words puts that skill first among the hints.
+- `regenerate` and `install` keep your words. Up to 20 per skill, 60 characters each.
+- A word that also fires on ordinary replies (for example `fix` in "please fix this") is allowed, with a warning.
+
+---
+
 ## Models
 
 
@@ -208,6 +258,7 @@ npx skill-autoroute install --model triggers=haiku
 | `regenerate`         | Update triggers for new or changed skills, or for all skills after an update that changes how triggers are written. Keeps your choices. |
 | `scan`               | Scan and find duplicates only. Writes nothing.                 |
 | `set <skill> on|off` | Turn one skill's hints on or off                               |
+| `words [<skill> [add|remove <word>...]]` | Your own trigger words for a skill. Without a skill, lists all of them. |
 | `status`             | Tools, hook state, skill counts, changed skills                |
 | `tokens`             | Hint size per skill and usage log summary                      |
 | `bench`              | Measure the hook's real token cost                             |
