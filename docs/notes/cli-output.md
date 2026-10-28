@@ -81,3 +81,25 @@ Throwaway project with `.claude/settings.json` holding one `UserPromptSubmit` co
 - Codex probes: use `--ignore-user-config -s read-only` (login intact; avoids the gateway stderr error). Read the last `agent_message` `item.text`, then `turn.completed.usage`.
 - Always spawn both CLIs with stdin ignored.
 - Codex hook install cannot be verified headless; the installer must tell the user to trust the hook via `/hooks`.
+
+## End-to-end, 2026-10-28
+
+Manual release check from the spec (section 11), run with Claude Code 2.1.312 and codex-cli 0.164.0 on one machine. Setup: a throwaway `HOME` with copies (not links) of five real Claude skills (`vibe-security`, `no-ai-slop`, `pr-description`, `golang-patterns`, `search-first`), copies of two of them under `~/.agents/skills` for Codex, and the two login files symlinked in. The run used `--tools claude,codex --ai claude`. Paths and ids are left out.
+
+| Step | Result |
+|---|---|
+| `install --dry-run` | Probe worked under the throwaway `HOME` (login intact): 3,385 input tokens for the call. Printed 7 scan calls, 2 duplicate calls, 1 trigger call with estimates (about 60k input tokens in total). Wrote nothing. |
+| `install --yes --log` | Exit 0. 7 skills found (claude 5, codex 2). All 7 scanned: "no issues found". Two duplicate groups (same content under Claude and Codex): the Claude copy was preferred, the Codex copies were left off. 5 skills routed. Self-test passed. Codex hook written to `~/.codex/hooks.json` with the note to run `/hooks`. |
+| Install token report (real vs estimate, input / cache-read / output) | probe 2,929 / 1,619 / 52. scan (7 calls, sonnet) 37,964 / 19,056 / 539, estimate was 40,531 / 11,333 / 1,050. dedupe (2 calls, sonnet) 11,521 / 3,147 / 374. triggers (1 call, haiku) 5,936 / 0 / 2,407, estimate was 3,835 / 1,619 / 300. Total 11 calls: 58,350 input (estimate 58,200), 23,822 cache-read, 3,372 output (estimate 1,702). The input estimate was close. The trigger output estimate was low by about 8x. |
+| `claude -p` with a matching prompt | The hint arrived. Prompt: a security review of supabase auth rules, plus an instruction to name the skills in the "Skills that fit this work" line. The model answered `vibe-security`, which is the skill with the highest priority among the matches. `usage.log` gained one line (1 hint, 288 characters, no prompt text). `--output-format stream-json` showed only the `SessionStart` hook events, not `UserPromptSubmit`, so the model answer is the evidence. With the throwaway settings loaded, that one call used 2 + 4,764 + 48,603 input tokens (uncached + cache write + cache read), about 53k. |
+| `codex exec` with a matching prompt | Blocked, not verified. Two calls ended with `turn.failed` and the message that the account had hit its usage limit, before any model output. Whether the hook fires under `codex exec` is still unknown. Not worked around. |
+| Codex hook trust | Not tested (see above). The `/hooks` trust step could not be exercised headless. |
+| `tokens` | Printed one line per enabled skill (about 52 to 54 tokens per hint, estimate) and the usage log summary (1 fire, 288 characters, about 72 tokens, estimate). |
+| `bench` | Skipped. Its 10 calls load the user's settings, so each is about 53k tokens as measured above, around 530k in total. That is over the 50k limit set for this check. The comparison of `bench` numbers with the CLI's own usage figure was not done. |
+
+Findings from this run:
+
+- `CODEX_HOME` set in the environment overrides `HOME` for Codex. The first Codex call therefore ran against the real Codex home, not the throwaway one (a failed turn, no config change). The Codex adapter writes the hook to `~/.codex/hooks.json` from `os.homedir()` and ignores `CODEX_HOME`, so a user with `CODEX_HOME` set would get the hook in the wrong place. Not fixed here; for the whole-branch review.
+- Claude Code created `~/.claude/skills/synced` while the check ran. That changes the modification time of the skills root, so `status` showed "stale: 1" right after install, and the hook would add the stale line to hints. A skill-root mtime is a weak staleness signal for that folder. Not fixed here; for the whole-branch review.
+- Duplicate verdict text can say "Skill 1" and "Skill 2", and a duplicate row reads "duplicate of golang-patterns" when both copies have the same name. Readable but unclear.
+- The probe overhead varied between calls (3,385 then 2,929 input tokens), so estimates move by a few percent.
