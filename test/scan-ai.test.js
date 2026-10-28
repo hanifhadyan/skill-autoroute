@@ -109,3 +109,32 @@ test('aiScan: failure or bad shape returns no-change partial result, never throw
     assert.deepEqual(await aiScan(fake(() => reply({ verdict: 'ok' })), skill, {}), none);
   } finally { cleanup(); }
 });
+
+test('mergeScan: prototype-key or unknown verdicts never lower severity', async () => {
+  const block = { verdict: 'block', partial: false, findings: [] };
+  for (const v of ['toString', 'constructor', '__proto__', 'hasOwnProperty', 'bogus', undefined]) {
+    assert.equal(mergeScan(block, { verdict: v, partial: false, findings: [] }).verdict, 'block', String(v));
+    assert.equal(mergeScan({ verdict: v, partial: false, findings: [] }, block).verdict, 'block', String(v));
+    assert.equal(mergeScan({ verdict: 'ok', partial: false, findings: [] }, { verdict: v, partial: false, findings: [] }).verdict, 'block', String(v));
+  }
+  const { skill, cleanup } = mkSkill({ 'SKILL.md': 'text' });
+  try {
+    for (const v of ['toString', 'constructor', '__proto__']) {
+      const r = await aiScan(fake(() => reply({ verdict: v, findings: [] })), skill, {});
+      assert.deepEqual(r, { verdict: 'ok', partial: true, findings: [] });
+      assert.equal(mergeScan(block, r).verdict, 'block');
+    }
+  } finally { cleanup(); }
+});
+
+test('aiScan: SKILL.md over the cap keeps SKILL.md first, skips the other file, partial', async () => {
+  const { skill, cleanup } = mkSkill({ 'scripts/run.sh': 'OTHER-FILE', 'SKILL.md': 'x'.repeat(70000) });
+  try {
+    const a = fake(() => reply({ verdict: 'ok', findings: [] }));
+    const r = await aiScan(a, skill, {});
+    const { prompt } = a.calls[0];
+    assert.equal(r.partial, true);
+    assert.ok(prompt.includes('file: SKILL.md'));
+    assert.ok(!prompt.includes('OTHER-FILE') && !prompt.includes('scripts/run.sh'));
+  } finally { cleanup(); }
+});

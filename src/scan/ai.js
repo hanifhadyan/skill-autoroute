@@ -70,14 +70,17 @@ function buildInput(skill) {
 
 const NO_CHANGE = () => ({ verdict: 'ok', partial: true, findings: [] });
 const SEVERITY = { warn: 'medium', block: 'high' };
-const RANK = { ok: 0, warn: 1, block: 2 };
+// A Map, not an object: `'toString' in {}` is true. Unknown verdicts rank as block.
+const RANK = new Map([['ok', 0], ['warn', 1], ['block', 2]]);
+const rank = (v) => RANK.get(v) ?? 2;
+const norm = (v) => (RANK.has(v) ? v : 'block');
 
 export async function aiScan(adapter, skill, { model, effort } = {}, recorder) {
   try {
     const { text, partial } = buildInput(skill);
     const { json, usage } = await adapter.headless({ prompt: PROMPT(nonce(), text), schema: AI_SCAN_SCHEMA, model, effort });
     recorder?.add('scan', usage);
-    if (!json || !(json.verdict in RANK) || !Array.isArray(json.findings)) return NO_CHANGE();
+    if (!json || !RANK.has(json.verdict) || !Array.isArray(json.findings)) return NO_CHANGE();
     const severity = SEVERITY[json.verdict];
     const findings = severity ? json.findings.slice(0, MAX_FINDINGS).map((f) => ({
       rule: 'ai',
@@ -96,7 +99,7 @@ export async function aiScan(adapter, skill, { model, effort } = {}, recorder) {
 
 export function mergeScan(a, b) {
   return {
-    verdict: RANK[a.verdict] >= RANK[b.verdict] ? a.verdict : b.verdict,
+    verdict: norm(rank(a.verdict) >= rank(b.verdict) ? a.verdict : b.verdict),
     partial: Boolean(a.partial || b.partial),
     findings: [...a.findings, ...b.findings],
   };

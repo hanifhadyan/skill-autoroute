@@ -7,6 +7,7 @@ import { candidateGroups, aiDedupe, DEDUPE_SCHEMA } from '../src/dedupe.js';
 import { Recorder } from '../src/usage.js';
 
 const sk = (name, description, source = 'user', skillPath = `/x/${source}/${name}/SKILL.md`) => ({ name, description, source, skillPath });
+const jac = (x, y) => { const p = new Set(x.description.split(' ')), q = new Set(y.description.split(' ')); return [...p].filter((w) => q.has(w)).length / new Set([...p, ...q]).size; };
 const fake = (respond) => {
   const calls = [];
   return { calls, headless: async (args) => { calls.push(args); return respond(args); } };
@@ -37,6 +38,14 @@ test('candidateGroups: name match is case-insensitive; each skill in one group; 
   assert.deepEqual(candidateGroups([]), []);
 });
 
+test('candidateGroups: a candidate joins through any member, not only the first', () => {
+  const a = sk('a', 'alpha beta gamma delta epsilon zeta');
+  const b = sk('b', 'alpha beta gamma delta eta theta');
+  const c = sk('c', 'eta theta iota kappa gamma delta');
+  assert.ok(jac(a, c) < 0.5 && jac(b, c) >= 0.5);
+  assert.deepEqual(candidateGroups([a, b, c]).map((g) => g.map((s) => s.name)), [['a', 'b', 'c']]);
+});
+
 test('candidateGroups: stop words and short words do not create similarity', () => {
   const a = sk('one', 'Use when you want to help with the task');
   const b = sk('two', 'Use when you want to help with the work');
@@ -49,35 +58,62 @@ function mkGroup() {
   return { group: [mk('a', 'BODY-A', 'user'), mk('b', 'B'.repeat(9000), 'plugin')], cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-test('aiDedupe: untrusted wrapping, 8000 char cap, valid answer', async () => {
+test('aiDedupe: numbered members, everything inside the untrusted block, 8000 char cap, valid answer', async () => {
   const { group, cleanup } = mkGroup();
   try {
     const [a, b] = group;
-    const f = fake(() => ({ json: { keep: b.skillPath, reasons: [{ skillPath: a.skillPath, reason: 'x'.repeat(300) }, { skillPath: b.skillPath, reason: 'better' }, { skillPath: '/other', reason: 'ignored' }] }, usage: { input: 1, output: 1, model: 'm' } }));
+    a.name = 'NAME-A'; a.source = 'SRC-A';
+    const f = fake(() => ({ json: { keep: 2, reasons: [{ skill: 1, reason: 'x'.repeat(300) }, { skill: 2, reason: 'better' }, { skill: 9, reason: 'ignored' }] }, usage: { input: 1, output: 1, model: 'm' } }));
     const rec = new Recorder();
     const r = await aiDedupe(f, group, { model: 'sonnet', effort: 'medium' }, rec);
     assert.equal(r.keep, b.skillPath);
     assert.equal(r.reasons[a.skillPath].length, 200);
     assert.equal(r.reasons[b.skillPath], 'better');
-    assert.equal(r.reasons['/other'], undefined);
+    assert.deepEqual(Object.keys(r.reasons).sort(), [a.skillPath, b.skillPath].sort());
     const { prompt, schema, model } = f.calls[0];
     const nonce = prompt.match(/<untrusted-skill-([0-9a-f]{16})>/)[1];
     assert.equal(prompt.split(nonce).length - 1, 4);
     assert.equal(prompt.split('BODY-A').length - 1, 1);
     assert.equal((prompt.match(/B+/g) ?? []).sort((p, q) => q.length - p.length)[0].length, 8000);
     assert.match(prompt, /^[A-Za-z]/);
+    assert.ok(!prompt.includes(a.skillPath) && !prompt.includes(b.skillPath));
+    const inside = prompt.match(new RegExp(`<untrusted-skill-${nonce}>([\\s\\S]*?)</untrusted-skill-${nonce}>`))[1];
+    assert.ok(inside.includes('NAME-A') && inside.includes('SRC-A'));
+    assert.equal(prompt.split('NAME-A').length - 1, 1);
     assert.deepEqual([schema, model], [DEDUPE_SCHEMA, 'sonnet']);
     assert.equal(rec.rows()[0].step, 'dedupe');
   } finally { cleanup(); }
 });
 
-test('aiDedupe: failure, keep outside the group, or bad shape returns keep null', async () => {
+test('aiDedupe: name is capped at 200 chars', async () => {
+  const { group, cleanup } = mkGroup();
+  try {
+    group[0].name = 'N'.repeat(500);
+    const f = fake(() => ({ json: { keep: 1, reasons: [] } }));
+    await aiDedupe(f, group, {});
+    assert.equal(f.calls[0].prompt.match(/N+/g).sort((p, q) => q.length - p.length)[0].length, 200);
+  } finally { cleanup(); }
+});
+
+test('aiDedupe: failure, out-of-range or non-integer keep, or bad shape returns keep null', async () => {
   const { group, cleanup } = mkGroup();
   try {
     const none = { keep: null };
     assert.deepEqual(await aiDedupe(fake(() => { throw new Error('boom'); }), group, {}), none);
-    assert.deepEqual(await aiDedupe(fake(() => ({ json: { keep: '/nope', reasons: [] } })), group, {}), none);
-    assert.deepEqual(await aiDedupe(fake(() => ({ json: { keep: group[0].skillPath } })), group, {}), none);
+    for (const keep of [0, 3, -1, 1.5, '1', null, group[0].skillPath]) {
+      assert.deepEqual(await aiDedupe(fake(() => ({ json: { keep, reasons: [] } })), group, {}), none, String(keep));
+    }
+    assert.deepEqual(await aiDedupe(fake(() => ({ json: { keep: 1 } })), group, {}), none);
     assert.deepEqual(await aiDedupe(fake(() => ({ json: null })), group, {}), none);
   } finally { cleanup(); }
+});
+
+test('aiDedupe: reads only the start of a huge SKILL.md', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sa-dd-'));
+  try {
+    const p = join(dir, 'big.md'); writeFileSync(p, 'Z'.repeat(5_000_000));
+    const f = fake(() => ({ json: { keep: 1, reasons: [] } }));
+    await aiDedupe(f, [sk('big', 'd', 'user', p), sk('big', 'd', 'user', p)], {});
+    assert.equal(f.calls[0].prompt.match(/Z+/g)[0].length, 8000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
