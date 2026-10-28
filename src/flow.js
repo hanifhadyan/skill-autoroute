@@ -12,6 +12,7 @@ import { aiTriggers, keywordRules, TRIGGER_PROMPT } from './triggers.js';
 import { estimate, Recorder, formatReport, writeReport, hookReport, num } from './usage.js';
 import { readTable, writeTable, mergeTables } from './table.js';
 import { pickModel } from './models.js';
+import { RULES_VERSION } from './triggers.js';
 import { routesPath, reportPath, hookCopyPath, logPath } from './paths.js';
 import { installHookCopy, hookCommand, checkConfig } from './tools/hookconfig.js';
 import { route, staleCount, resolveProject } from '../hook/route.js';
@@ -197,7 +198,7 @@ const entry = (r, gen, scope) => {
 };
 const tableOf = (ctx, skills, roots, log) => ({
   version: 1, generatedAt: new Date().toISOString(),
-  generator: { ai: ctx.ai ? ctx.aiName : 'none', model: ctx.ai ? pickModel(ctx.aiName, 'triggers', ctx.overrides).model ?? null : null, overheadPerCall: ctx.overhead, cacheReadPerCall: ctx.cacheOverhead },
+  generator: { ai: ctx.ai ? ctx.aiName : 'none', model: ctx.ai ? pickModel(ctx.aiName, 'triggers', ctx.overrides).model ?? null : null, overheadPerCall: ctx.overhead, cacheReadPerCall: ctx.cacheOverhead, rules: RULES_VERSION },
   roots, ...(log ? { log: true } : {}), skills,
 });
 
@@ -325,9 +326,10 @@ export async function regenerate(o, ui) {
   const { skills, roots } = findSkills(tools, scope);
   ctx.cacheOverhead = Number(old.generator?.cacheReadPerCall) || 0;
   const fresh = skills.filter((s) => was(s)?.hash !== s.hash);
-  // unchanged and enabled but without rules (turned on with `set` after generate): they only need rules
-  const bare = skills.filter((s) => !fresh.includes(s) && was(s).enabled && !was(s).patterns?.length);
-  ui.log(`skills: ${skills.length}, new or changed: ${fresh.length}, enabled without rules: ${bare.length}`);
+  // unchanged and enabled but without rules (turned on with `set` after generate), or with rules from an older RULES_VERSION: they only need rules
+  const outdated = old.generator?.rules !== RULES_VERSION;
+  const bare = skills.filter((s) => !fresh.includes(s) && was(s).enabled && (outdated || !was(s).patterns?.length));
+  ui.log(`skills: ${skills.length}, new or changed: ${fresh.length}, ${outdated ? 'rules from an older version' : 'enabled without rules'}: ${bare.length}`);
   const rows = buildRows(fresh, await runScans(fresh, ctx, ui)).map((r) => {
     const w = was(r.skill);
     if (!w) return r;
@@ -340,10 +342,13 @@ export async function regenerate(o, ui) {
   const byPath = new Map(rows.map((r) => [r.skill.skillPath, entry(r, gen, scope)]));
   for (const s of bare) {
     const g = gen.bySkill.get(s.name);
+    // a failed AI call must not swap working older rules for keyword rules
+    if (was(s).patterns?.length && (!g || gen.fellBack.includes(s.name))) continue;
     byPath.set(s.skillPath, { ...was(s), priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
   }
   const table = tableOf(ctx, skills.map((s) => byPath.get(s.skillPath) ?? was(s)), roots.map(key), old.log);
-  if (!o.ai && old.generator) table.generator = old.generator; // unchanged rules still come from the old generator
+  // unchanged rules still come from the old generator; after a full rebuild the new model wrote them all
+  if (!o.ai && old.generator) table.generator = { ...old.generator, rules: RULES_VERSION, ...(outdated && ctx.ai ? { model: table.generator.model } : {}) };
   printRows(rows, ui);
   writeTable(routesPath(scope), table);
   writeReport(reportPath(scope), ctx.rec, ctx.est);

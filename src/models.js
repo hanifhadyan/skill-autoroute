@@ -2,7 +2,8 @@ import { resolveCodexModel } from './tools/codex-models.js';
 
 const light = { claude: ['haiku', 'low'], codex: ['small', 'low'] };
 const deep = { claude: ['sonnet', 'medium'], codex: ['mid', 'medium'] };
-export const STEP_DEFAULTS = { probe: light, triggers: light, dedupe: deep, scan: deep };
+// triggers: sonnet-written rules were judged far more precise than haiku-written ones on real prompts
+export const STEP_DEFAULTS = { probe: light, triggers: { claude: ['sonnet', 'low'], codex: ['mid', 'low'] }, dedupe: deep, scan: deep };
 
 // overrides: {step: model} from `--model step=model`; an override is used as given.
 export function pickModel(tool, step, overrides = {}) {
