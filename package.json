@@ -1,0 +1,12 @@
+{
+  "name": "skill-autoroute",
+  "version": "0.1.0",
+  "description": "Per-prompt skill router hook for Claude Code and Codex",
+  "type": "module",
+  "bin": { "skill-autoroute": "bin/cli.js" },
+  "engines": { "node": ">=18" },
+  "files": ["bin", "src", "hook", "skill"],
+  "scripts": { "test": "node --test" },
+  "license": "MIT",
+  "dependencies": { "@clack/prompts": "1.8.1" }
+}
