@@ -6,15 +6,17 @@ const BUDGET_MS = 200; // per input, measured inside the worker
 const KILL_GRACE_MS = 300; // extra wait for a worker that stopped answering
 const START_MS = 2000; // worker start-up allowance
 
-// "Repeating" quantifier: * + {n,} {n,m} with m>n. ? and fixed {n} cannot nest into a blow-up.
+// rep: * + {n,} {n,m} with m>n (inside a group this makes it risky). multi: also any fixed {n} with n>=2
+// (a group repeated like that is risky when its body has a rep). ? never counts.
 function readQuantifier(src, i) {
   const c = src[i];
-  if (c === '*' || c === '+') return { len: 1, rep: true };
-  if (c === '?') return { len: 1, rep: false };
+  if (c === '*' || c === '+') return { len: 1, rep: true, multi: true };
+  if (c === '?') return { len: 1, rep: false, multi: false };
   if (c !== '{') return null;
   const m = /^\{(\d+)(,(\d*))?\}/.exec(src.slice(i, i + 24));
   if (!m) return null; // a literal "{" without the u flag
-  return { len: m[0].length, rep: m[2] !== undefined && (m[3] === '' || +m[3] > +m[1]) };
+  const rep = m[2] !== undefined && (m[3] === '' || +m[3] > Math.max(+m[1], 1));
+  return { len: m[0].length, rep, multi: rep || +(m[3] || m[1]) > 1 };
 }
 
 const wild = (t) => t === null || t === '.';
@@ -69,9 +71,9 @@ export function hasNestedQuantifier(src) {
       i++;
       if (stack.length === 1) continue;
       const g = stack.pop();
-      const rep = quant()?.rep === true;
-      if (rep && (g.q || overlapping(g.firsts))) return true;
-      top().q ||= g.q || rep;
+      const q = quant();
+      if (q?.multi && (g.q || overlapping(g.firsts))) return true;
+      top().q ||= g.q || q?.rep === true;
       atom('(');
     } else if (c === '|') {
       top().firsts.push(null);

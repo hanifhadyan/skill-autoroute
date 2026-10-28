@@ -70,3 +70,19 @@ test('validateRules keeps validating after a worker timeout', async () => {
 test('validateRules on no rules', async () => {
   assert.deepEqual(await validateRules([]), { rules: [], rejected: [] });
 });
+
+test('rejects a bounded repeat of a group that holds a repeating quantifier', async () => {
+  assert.match(await err('(e.*){10}q'), /nested quantifier/);
+  assert.match(await err('(\\w+\\s){2,5}x'), /nested quantifier/);
+});
+
+test('accepts fixed counts inside a repeat and an optional group', async () => {
+  for (const p of ['(\\d{3}-)+', '\\bdocker(file)?\\b', '(ab){3}c']) {
+    assert.deepEqual(await validatePattern(p), { ok: true }, p);
+  }
+});
+
+test('timing runs on prompt-like English text, not only a/space/draft', async () => {
+  // No nested group, so the static scan passes it; the a/space/draft inputs have no "e" and fail fast.
+  assert.equal(await err('e.*e.*e.*e.*e.*q'), 'too slow');
+});
