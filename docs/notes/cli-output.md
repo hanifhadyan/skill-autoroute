@@ -3,8 +3,8 @@
 Recorded 2026-10-28 with Claude Code 2.1.312 and codex-cli 0.164.0, on the user's own logins, in throwaway dirs under the session scratchpad (never inside this repo). 8 real calls in total, all small model at low effort (one `gpt-6.1-sol` availability check). Probe prompt: `Reply with {"ok":true}`. Schema file for Codex (`schema.json`): `{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}`.
 
 Fixtures (all redacted; no prompt text other than "hello"):
-- `test/fixtures/claude-headless.json` (run C below)
-- `test/fixtures/codex-headless.jsonl` (run A below)
+- `test/fixtures/claude-headless.json` (run C below). Its `stop_reason` is `"tool_use"` and `num_turns` is 2 for what was one API call (the structured-output tool turn). Tests must not assert on `stop_reason` or treat `num_turns` as a call count; use `is_error`, `subtype` and `structured_output`.
+- `test/fixtures/codex-headless.jsonl` (Codex run A: default user config, `gpt-6-luna`. Run B, `--ignore-user-config`, has the identical event types and usage field names; only the `input_tokens` number differs.)
 - `test/fixtures/claude-hook-input.json` (captured)
 - `test/fixtures/codex-hook-input.json` (NOT captured, documented shape only, see Codex hook section)
 
@@ -15,10 +15,10 @@ Fixtures (all redacted; no prompt text other than "hello"):
 
 | Question | Answer | Command |
 |---|---|---|
-| Does it succeed on the login? | Yes. `is_error:false`, exit 0, `apiKeySource:"none"` (OAuth login, no API key). | `CL` (run A) |
+| Does it succeed on the login? | Yes. `is_error:false`, exit 0. (`apiKeySource:"none"`, i.e. OAuth login with no API key, was seen only in the `system` `init` event of the stream-json hook run; it is not in the `--output-format json` result.) | `CL` (run A) |
 | Does `--setting-sources ""` keep login working? | Yes. Succeeds, same result. | `CL --setting-sources ""` (run B) |
 | Does `--setting-sources ""` plus `--strict-mcp-config --disable-slash-commands` keep login working? | Yes. Succeeds, same result. | `CL --setting-sources "" --strict-mcp-config --disable-slash-commands` (run C) |
-| Does `--bare` keep login working? | No: `is_error:true`, `result:"Not logged in · Please run /login"`, exit 1, zero tokens (no API call made). **Not used**: `--bare` skips OAuth/keychain, so it only works with an API key. | `CL --bare` |
+| Does `--bare` keep login working? | No: `is_error:true`, `result:"Not logged in · Please run /login"`, exit 1, zero tokens (no API call made). **Not used.** Only "Not logged in" and exit 1 were observed; the reason (`--bare` skips OAuth/keychain reads, so it needs an API key) is from `claude --help` and Claude Code docs, not observed. | `CL --bare` |
 | Path of the parsed result | `structured_output` (top level object, already parsed: `{"ok":true}`). `result` is the same JSON as a string. Success flags: `is_error === false`, `subtype === "success"`, `terminal_reason === "completed"`. On failure `is_error:true` and `result` holds the message. | `CL` |
 | JSON path of input tokens | `usage.input_tokens` (uncached part only, 2 to 6 here) | `CL` |
 | JSON path of cache read | `usage.cache_read_input_tokens` | `CL` |
@@ -26,12 +26,12 @@ Fixtures (all redacted; no prompt text other than "hello"):
 | JSON path of output tokens | `usage.output_tokens` (includes thinking; `usage.output_tokens_details.thinking_tokens` is the part) | `CL` |
 | Other useful fields | `total_cost_usd`, `num_turns`, `modelUsage["claude-haiku-5-5"]` (camelCase: `inputTokens`, `outputTokens`, `cacheReadInputTokens`, `cacheCreationInputTokens`, `costUSD`), `session_id`, `uuid`. `--model haiku` resolved to `claude-haiku-5-5`. | `CL` |
 | Is `usage` cumulative? | Top-level `usage` sums every API call of the run. `usage.iterations[]` holds only the last call. Run B: `num_turns:3`, top-level 6 + 54722 + 51788, last iteration 4 + 1491 + 51788, so two ~53.2k calls. Count total input as `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` from the top level. | run B |
-| Input-token count, no context flag (run A) | 73,304 total (2 + 73,302 cache write + 0 read), 1 call | `CL` |
+| Input-token count, no context flag (run A) | 73,304 total (2 + 73,302 cache write + 0 read) | `CL` |
 | Input-token count with `--setting-sources ""` (run B) | 106,516 total over 2 calls = about 53.3k per call (6 + 54,722 write + 51,788 read) | `CL --setting-sources ""` |
-| Input-token count with `--setting-sources "" --strict-mcp-config --disable-slash-commands` (run C) | 4,527 total (2 + 3,454 write + 1,071 read), 1 call. About 16x smaller than A. | run C command |
+| Input-token count with `--setting-sources "" --strict-mcp-config --disable-slash-commands` (run C) | 4,527 total (2 + 3,454 write + 1,071 read). About 16x smaller than A. | run C command |
 | Which of the three flags cut the last 49k? | Not attributed: I did not spend extra calls on one flag each. `--setting-sources ""` alone gives about 53k per call, so the MCP and/or skills flags remove most of the rest. A later task can test `--strict-mcp-config` alone if it matters. | n/a |
-| Do the user's global hooks fire in headless `-p`? | Yes by default: settings sources load them (the user has hooks on 16 events, 3 on UserPromptSubmit, 20 enabled plugins). Not run directly (a stream-json run would cost another call), but run A is 20k tokens larger than B. With `--setting-sources project` the init event listed no user plugins and only one SessionStart hook ran (see next row), so user hooks are suppressed. `--setting-sources ""` loads nothing from settings, so it suppresses them too (inferred from B/C token drop and the init plugin list, not observed directly). | `claude ... --setting-sources project --output-format stream-json --verbose` |
-| Hook output with `--setting-sources`? | One `SessionStart:startup` hook still ran: it came from an inline plugin injected by the Orca harness through env `CLAUDE_CODE_PLUGIN_DIRS`, not from user settings. This env var is set only because the spike ran inside an Orca-managed Claude session; a plain terminal would not have it. | same |
+| Do the user's global hooks fire in headless `-p`? | Not observed directly; inferred from the evidence below, for both halves. (a) Without a flag they load: run A is about 20k tokens larger than run B, and settings sources normally load user hooks and plugins. No stream-json run was done without a flag (it would cost another call). (b) With `--setting-sources project` they are suppressed: the init event listed no user plugins and only one SessionStart hook ran (next row). `--setting-sources ""` loads nothing from settings, so it should suppress them too, inferred from the B/C token drop and the init plugin list. | `claude ... --setting-sources project --output-format stream-json --verbose` |
+| Hook output with `--setting-sources`? | One `SessionStart:startup` hook still ran: it came from an inline plugin injected by the surrounding harness through env `CLAUDE_CODE_PLUGIN_DIRS`, not from user settings. That env var was set only because the spike ran inside a harness-managed Claude session; a plain terminal would not have it. | same |
 | Slowness | Without a TTY on stdin, `claude -p` waits 3 s and warns `no stdin data received in 3s, proceeding without it`. Spawn with stdin ignored (`stdio: ['ignore', ...]`) or `< /dev/null`. Runs took about 9 s with the wait. | `CL` |
 
 ## Claude hook input (UserPromptSubmit)
@@ -52,8 +52,8 @@ Throwaway project with `.claude/settings.json` holding one `UserPromptSubmit` co
 
 | Question | Answer | Command |
 |---|---|---|
-| Does it succeed on the login (user config uses `model_provider = "caveman"` gateway)? | Yes, exit 0, final message `{"ok":true}`. Stderr shows `ERROR codex_models_manager::manager: failed to refresh available models: request timed out` (gateway model-list refresh) but the call still completes. | `CX` (run A) |
-| Does `--ignore-user-config` keep login working? | Yes, exit 0, same result, no gateway error on stderr. It skips `~/.codex/config.toml` (so no `caveman` provider) but still uses `auth.json`. | `CX --ignore-user-config` (run B) |
+| Does it succeed on the login (user config sets a custom `model_provider` gateway)? | Yes, exit 0, final message `{"ok":true}`. Stderr shows `ERROR codex_models_manager::manager: failed to refresh available models: request timed out` (gateway model-list refresh) but the call still completes. | `CX` (run A) |
+| Does `--ignore-user-config` keep login working? | Yes, exit 0, same result, no gateway error on stderr. It skips `~/.codex/config.toml` (so the custom provider is not used) but still uses `auth.json`. | `CX --ignore-user-config` (run B) |
 | Does `gpt-6.1-sol` work? | Yes, accepted and returned `{"ok":true}` (default user config, low effort). The JSONL does not name the served model, so "works" means the request was accepted and answered. | `CX` with `-m gpt-6.1-sol` (run C) |
 | JSONL events | `thread.started` (`thread_id`), `turn.started`, `item.completed`, `turn.completed`. One JSON object per line. | `CX` |
 | Where is the final message? | `item.completed` event with `item.type === "agent_message"`, text at `item.text` (a JSON string: parse it again, giving `{"ok":true}`). Take the last such event. | `CX` |
