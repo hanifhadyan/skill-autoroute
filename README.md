@@ -45,6 +45,19 @@ No match means no output and **0 extra tokens**. No AI runs at prompt time. The 
 
 ![Every prompt: the hook checks the trigger table; a match adds one hint line, no match adds nothing](https://raw.githubusercontent.com/hanifhadyan/skill-autoroute/main/docs/img/flow-prompt.png)
 
+### 3 · During the work (agent loops)
+
+The hook fires only when a prompt arrives, not on every step of an agent loop. So the first prompt of each session
+also tells the agent how to ask for skills itself before a new sub-task:
+
+```bash
+node ~/.config/skill-autoroute/route.mjs claude suggest <session-id> "write the migration for the orders table"
+```
+
+The hook remembers which skills it already named in a session (in `~/.config/skill-autoroute/sessions/`, pruned
+after 7 days). A later prompt, or a resumed round of a headless run (`claude -p --resume`), does not hint them again.
+`suggest` always answers and adds what it names to that memory.
+
 ---
 
 ## Quick start
@@ -151,8 +164,10 @@ The router **adds** tokens. It does not save them. It pays off when a hint makes
 
 | When                                       | Cost                                                           |
 | ------------------------------------------ | -------------------------------------------------------------- |
-| A prompt matches nothing                   | **0 tokens**                                                   |
+| A prompt matches nothing                   | **0 tokens** (the first prompt of a session: the `suggest` line, about 40 tokens) |
 | A prompt matches                           | one line, about 50–70 tokens per skill, at most 3 skills       |
+| A skill already named in this session      | **0 tokens**: not hinted again                                 |
+| The agent runs `suggest`                   | one tool call plus the same hint line                          |
 | Install (example: 7 skills, `--ai claude`) | 58,350 input tokens against an estimate of 58,200, in 11 calls |
 
 
