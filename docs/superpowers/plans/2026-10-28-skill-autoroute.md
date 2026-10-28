@@ -6,13 +6,13 @@
 
 **Architecture:** Plain Node ESM modules under `src/`, one adapter per tool under `src/tools/`, a dependency-free hook script that the installer copies next to `routes.json`, and a CLI in `bin/cli.js` that wires the steps. AI steps go through the adapter's `headless()` call to the user's own `claude` or `codex` login.
 
-**Tech Stack:** Node 18+ (ESM), `@clack/prompts` (only runtime dependency), `node:test` + `node:assert/strict`, `node:worker_threads`.
+**Tech Stack:** Node 20.12+ (ESM), `@clack/prompts` (only runtime dependency), `node:test` + `node:assert/strict`, `node:worker_threads`.
 
 **Spec:** `docs/specs/2026-10-28-skill-autoroute-design.md`
 
 ## Global Constraints
 
-- Node `>=18`, `"type": "module"`. One runtime dependency: `@clack/prompts`. No test dependency.
+- Node `>=20.12`, `"type": "module"`. One runtime dependency: `@clack/prompts`. No test dependency.
 - `hook/route.js` imports Node built-ins only. On any error it prints nothing and exits 0. `SKILL_AUTOROUTE_DEBUG=1` logs errors to stderr.
 - At most 3 hints per prompt. No output when no rule matches.
 - A clean scan reads "no issues found", never "safe". AI scan can only raise severity, never clear a static high finding.

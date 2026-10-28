@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { fakeHome, fakeCli, runHook } from './helpers.js';
+import { fakeHome, fakeCli } from './helpers.js';
 
 test('fakeCli writes an executable that runs the script', () => {
   const { home, cleanup } = fakeHome();
@@ -23,8 +23,4 @@ test('fakeHome dir exists until cleanup() removes it', () => {
   assert.ok(existsSync(home));
   cleanup();
   assert.ok(!existsSync(home));
-});
-
-test('runHook is exported', () => {
-  assert.equal(typeof runHook, 'function');
 });

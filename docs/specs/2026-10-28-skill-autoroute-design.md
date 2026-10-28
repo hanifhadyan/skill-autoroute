@@ -40,7 +40,7 @@ Out of scope for v1:
 
 | Decision | Choice |
 |---|---|
-| Language | Node 18+, ESM. One runtime dependency: `@clack/prompts`. |
+| Language | Node 20.12+, ESM. One runtime dependency: `@clack/prompts`. |
 | Install paths | (1) interactive `npx` installer; (2) a setup skill that makes the agent run the same CLI with `--yes`. |
 | Install scope | User-level by default; `--project` for repo-local hooks and a committed table. |
 | Matching | Generated regex table (hybrid): AI-generated triggers, keyword-generated when no AI CLI is present. |

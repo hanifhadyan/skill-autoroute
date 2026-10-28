@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -19,19 +19,14 @@ export function fakeCli(dir, name, script) {
   return p;
 }
 
-export function runHook(stdinJson, env = {}) {
-  return new Promise((resolve) => {
-    const t0 = Date.now();
-    const child = spawn('node', [join(root, 'hook', 'route.js')], {
-      env: { ...process.env, ...env },
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d) => (stdout += d));
-    child.stderr.on('data', (d) => (stderr += d));
-    // a missing hook file can exit before stdin is written
-    child.stdin.on('error', () => {});
-    child.stdin.end(typeof stdinJson === 'string' ? stdinJson : JSON.stringify(stdinJson));
-    child.on('close', (code) => resolve({ code, stdout, stderr, ms: Date.now() - t0 }));
+export function runHook(stdinJson, env = {}, cwd = process.cwd()) {
+  const t0 = Date.now();
+  const r = spawnSync('node', [join(root, 'hook', 'route.js')], {
+    input: typeof stdinJson === 'string' ? stdinJson : JSON.stringify(stdinJson),
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+    cwd,
+    timeout: 5000,
   });
+  return { code: r.status, stdout: r.stdout, stderr: r.stderr, ms: Date.now() - t0 };
 }
