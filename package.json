@@ -2,11 +2,42 @@
   "name": "skill-autoroute",
   "version": "0.1.0",
   "description": "Per-prompt skill router hook for Claude Code and Codex",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "skills",
+    "agent",
+    "hook",
+    "router",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hanifhadyan/skill-autoroute.git"
+  },
+  "homepage": "https://github.com/hanifhadyan/skill-autoroute#readme",
+  "bugs": {
+    "url": "https://github.com/hanifhadyan/skill-autoroute/issues"
+  },
+  "author": "Hanif Hadyan S",
   "type": "module",
-  "bin": { "skill-autoroute": "bin/cli.js" },
-  "engines": { "node": ">=20.12" },
-  "files": ["bin", "src", "hook", "skill"],
-  "scripts": { "test": "node --test test/*.test.js" },
+  "bin": {
+    "skill-autoroute": "bin/cli.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "files": [
+    "bin",
+    "src",
+    "hook",
+    "skill"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "license": "MIT",
-  "dependencies": { "@clack/prompts": "1.8.1" }
+  "dependencies": {
+    "@clack/prompts": "1.8.1"
+  }
 }
