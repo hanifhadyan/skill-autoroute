@@ -2,7 +2,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { addHook, removeHook as removeHookFrom } from './hookconfig.js';
-import { runCli, parseJson, onPath } from './run.js';
+import { runCli, parseJson, onPath, checkPrompt } from './run.js';
 
 export const name = 'codex';
 
@@ -11,24 +11,24 @@ const hooksFile = () => join(homedir(), '.codex', 'hooks.json');
 
 export const detect = () => ({ cli: onPath('codex'), configDir: existsSync(join(homedir(), '.codex')) });
 
-// Project scope also lists the user's dirs (see claude.skillDirs).
 export function skillDirs(scope) {
-  const dirs = [
+  if (scope === 'project') return [{ dir: join(process.cwd(), '.agents', 'skills'), tool: 'codex', source: 'project' }];
+  return [
     { dir: join(homedir(), '.agents', 'skills'), tool: 'codex', source: 'user' },
     { dir: join(homedir(), '.codex', 'skills'), tool: 'codex', source: 'user' },
   ];
-  if (scope === 'project') dirs.push({ dir: join(process.cwd(), '.agents', 'skills'), tool: 'codex', source: 'project' });
-  return dirs;
 }
 
 export function installHook(scope, command) {
   if (scope === 'project') return { ...NO_PROJECT };
-  return { ...addHook(hooksFile(), command), note: 'run /hooks once in Codex to trust the new hook' };
+  const r = addHook(hooksFile(), command);
+  return r.changed ? { ...r, note: 'run /hooks once in Codex to trust the new hook' } : r;
 }
 export const removeHook = (scope) => (scope === 'project' ? { ...NO_PROJECT } : removeHookFrom(hooksFile()));
 
 export async function headless({ prompt, schema, model, effort, timeoutMs }) {
-  const { stdout } = await runCli('codex', (dir) => {
+  checkPrompt(prompt);
+  const { stdout, stderr } = await runCli('codex', (dir) => {
     const schemaFile = join(dir, 'schema.json');
     writeFileSync(schemaFile, typeof schema === 'string' ? schema : JSON.stringify(schema));
     return [
@@ -44,9 +44,9 @@ export async function headless({ prompt, schema, model, effort, timeoutMs }) {
     if (ev.type === 'item.completed' && ev.item?.type === 'agent_message') text = ev.item.text;
     else if (ev.type === 'turn.completed') usage = ev.usage;
   }
-  if (text === undefined) throw new Error(`codex output had no agent_message: ${stdout.trim().slice(0, 200)}`);
+  if (text === undefined) throw new Error(`codex output had no agent_message: ${(stderr.trim() || stdout.trim()).slice(0, 200)}`);
   return {
-    json: parseJson('codex agent_message', text),
+    json: parseJson('codex agent_message', text, stderr),
     usage: { input: usage?.input_tokens ?? 0, cacheRead: usage?.cached_input_tokens ?? 0, output: usage?.output_tokens ?? 0, model: model ?? null },
   };
 }

@@ -55,6 +55,17 @@ test('codex skips hidden models and never returns an unlisted slug', () => {
   });
 });
 
+test('fallback returns the model from config.toml, else null', () => {
+  withHome(cacheOf(['gpt-6-astra', 'list']), () => {
+    writeFileSync(join(process.env.HOME, '.codex', 'config.toml'), 'model_provider = "gw"\n  model = "my-model"\n');
+    assert.deepEqual(resolveCodexModel('mid'), { model: 'my-model', fallback: true });
+  });
+  withHome(cacheOf(['gpt-6-sol', 'list']), () => {
+    writeFileSync(join(process.env.HOME, '.codex', 'config.toml'), 'model = "my-model"\n');
+    assert.deepEqual(resolveCodexModel('mid'), { model: 'gpt-6-sol', fallback: false });
+  });
+});
+
 test('missing, corrupt or unknown-tier cache falls back', () => {
   withHome(null, () => {
     assert.deepEqual(resolveCodexModel('mid'), { model: null, fallback: true });

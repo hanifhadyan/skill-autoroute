@@ -118,3 +118,26 @@ test('removeHook on a missing file does nothing', () => {
     assert.equal(existsSync(p), false);
   } finally { cleanup(); }
 });
+
+test('the marker is skill-autoroute/route.mjs: unrelated hooks are left alone', () => {
+  const { home, cleanup } = fakeHome();
+  try {
+    const p = join(home, 'settings.json');
+    const mine = { hooks: [{ type: 'command', command: 'node /home/u/dev/skill-autoroute/scripts/my-own-hook.js' }] };
+    writeFileSync(p, JSON.stringify({ hooks: { UserPromptSubmit: [mine] } }));
+    assert.deepEqual(removeHook(p), { changed: false });
+    assert.equal(addHook(p, CMD).changed, true, 'not mistaken for installed');
+    assert.equal(read(p).hooks.UserPromptSubmit.length, 2);
+    assert.deepEqual(removeHook(p), { changed: true });
+    assert.deepEqual(read(p), { hooks: { UserPromptSubmit: [mine] } });
+  } finally { cleanup(); }
+});
+
+test('addHook rejects a command without the marker', () => {
+  const { home, cleanup } = fakeHome();
+  try {
+    const p = join(home, 'settings.json');
+    assert.throws(() => addHook(p, 'node /x/other.js'), /skill-autoroute\/route\.mjs/);
+    assert.equal(existsSync(p), false);
+  } finally { cleanup(); }
+});

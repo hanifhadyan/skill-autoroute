@@ -1,9 +1,9 @@
-import { readFileSync, writeFileSync, renameSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, copyFileSync, mkdirSync, existsSync, realpathSync, statSync, chmodSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hookCopyPath } from '../paths.js';
 
-const MARK = 'skill-autoroute';
+const MARK = 'skill-autoroute/route.mjs';
 const EVENT = 'UserPromptSubmit';
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const ours = (h) => isObj(h) && typeof h.command === 'string' && h.command.includes(MARK);
@@ -25,16 +25,25 @@ function load(path) {
   return { cfg, existed: true };
 }
 
+// Writes next to the real target (a symlinked config stays a symlink) and keeps the file mode.
 function save(path, cfg) {
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}`;
-  writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
-  renameSync(tmp, path);
+  const target = existsSync(path) ? realpathSync(path) : path;
+  const tmp = `${target}.tmp-${process.pid}`;
+  try {
+    writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
+    if (existsSync(target)) chmodSync(tmp, statSync(target).mode & 0o7777);
+    renameSync(tmp, target);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* nothing to clean */ }
+    throw e;
+  }
 }
 
 const groupHooks = (g) => (isObj(g) && Array.isArray(g.hooks) ? g.hooks : []);
 
 export function addHook(configPath, command) {
+  if (!command.includes(MARK)) throw new Error(`hook command must contain "${MARK}"`);
   const { cfg, existed } = load(configPath);
   const groups = cfg.hooks?.[EVENT] ?? [];
   if (groups.some((g) => groupHooks(g).some(ours))) return { changed: false };

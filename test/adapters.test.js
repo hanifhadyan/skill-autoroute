@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, symlinkSync, statSync, lstatSync, chmodSync, readdirSync } from 'node:fs';
 import { fakeHome, fakeCli } from './helpers.js';
 import * as claude from '../src/tools/claude.js';
 import * as codex from '../src/tools/codex.js';
@@ -140,6 +140,7 @@ test('codex.installHook: user edits hooks.json; project is a no-op', () => env(a
   const r = codex.installHook('user', installHookCopy('user'));
   assert.equal(r.changed, true);
   assert.match(r.note, /\/hooks/);
+  assert.deepEqual(codex.installHook('user', installHookCopy('user')), { changed: false }, 'no trust note when nothing changed');
   assert.ok(existsSync(join(home, '.codex', 'hooks.json')));
   const note = 'codex uses the user-level hook; it reads the project table';
   assert.deepEqual(codex.installHook('project', 'x'), { changed: false, note });
@@ -182,9 +183,10 @@ test('claude.skillDirs: user, project and enabled plugins only', () => env(async
     { dir: join(on, 'skills'), tool: 'claude', source: 'plugin:on@m' },
   ]);
   const project = claude.skillDirs('project');
-  assert.deepEqual(project.map((d) => d.source), ['user', 'plugin:on@m', 'project', 'plugin:pp@m']);
-  assert.equal(project[2].dir, join(proj, '.claude/skills'));
-  for (const d of project) assert.ok(d.dir.startsWith(home), d.dir);
+  assert.deepEqual(project, [
+    { dir: join(proj, '.claude/skills'), tool: 'claude', source: 'project' },
+    { dir: join(projPlug, 'skills'), tool: 'claude', source: 'plugin:pp@m' },
+  ]);
 }));
 
 test('claude.skillDirs: missing or corrupt plugin files do not throw', () => env(async ({ home }) => {
@@ -202,7 +204,64 @@ test('codex.skillDirs', () => env(async ({ home, proj }) => {
     { dir: join(home, '.agents/skills'), tool: 'codex', source: 'user' },
     { dir: join(home, '.codex/skills'), tool: 'codex', source: 'user' },
   ]);
-  const p = codex.skillDirs('project');
-  assert.equal(p.length, 3);
-  assert.deepEqual(p[2], { dir: join(proj, '.agents/skills'), tool: 'codex', source: 'project' });
+  assert.deepEqual(codex.skillDirs('project'), [{ dir: join(proj, '.agents/skills'), tool: 'codex', source: 'project' }]);
+}));
+
+test('headless rejects a non-string prompt or one starting with "-"', () => env(async ({ bin }) => {
+  fakeCli(bin, 'claude', claudeScript);
+  fakeCli(bin, 'codex', codexScript);
+  for (const h of [claude.headless, codex.headless]) {
+    for (const prompt of ['--help', '-x', undefined, 5]) {
+      await assert.rejects(h({ prompt, schema: SCHEMA, model: null, effort: 'low' }), /prompt must be a string/);
+    }
+  }
+}));
+
+test('multi-byte characters split across stdout chunks survive', () => env(async ({ bin }) => {
+  const s = JSON.stringify({ is_error: false, structured_output: { t: 'a€\u{1F600}b' }, usage: {} });
+  fakeCli(bin, 'claude', `
+const b = Buffer.from(${JSON.stringify(s)});
+const i = b.indexOf(0xe2) + 1; // inside the 3-byte euro sign
+process.stdout.write(b.subarray(0, i));
+setTimeout(() => process.stdout.write(b.subarray(i)), 100);`);
+  const r = await claude.headless({ prompt: 'p', schema: SCHEMA, model: 'haiku', effort: 'low' });
+  assert.equal(r.json.t, 'a€\u{1F600}b');
+}));
+
+test('non-JSON on exit 0 reports the stderr head when there is one', () => env(async ({ bin }) => {
+  fakeCli(bin, 'claude', `console.error('warn: login expired'); console.log('garbage');`);
+  await assert.rejects(claude.headless({ prompt: 'p', schema: SCHEMA, model: 'haiku', effort: 'low' }), /not JSON: warn: login expired/);
+}));
+
+test('codex.headless uses the configured model when the tier cache falls back', () => env(async ({ home, bin }) => {
+  fakeCli(bin, 'codex', codexScript);
+  const { pickModel } = await import('../src/models.js');
+  mkdirSync(join(home, '.codex'));
+  writeFileSync(join(home, '.codex', 'config.toml'), '# c\nmodel_provider = "x"\nmodel = "my-gw-model"\n');
+  const pick = pickModel('codex', 'probe');
+  assert.deepEqual(pick, { model: 'my-gw-model', effort: 'low', fallback: true });
+  const r = await codex.headless({ prompt: 'p', schema: SCHEMA, ...pick });
+  assert.ok(r.json.argv.join(' ').includes('-m my-gw-model '));
+  writeFileSync(join(home, '.codex', 'config.toml'), 'model_provider = "x"\n');
+  const none = pickModel('codex', 'probe');
+  assert.equal(none.model, null);
+  assert.ok(!(await codex.headless({ prompt: 'p', schema: SCHEMA, ...none })).json.argv.includes('-m'));
+}));
+
+test('config edits keep a symlink and the file mode', () => env(async ({ home }) => {
+  const real = join(home, 'dotfiles', 'settings.json');
+  mkdirSync(join(home, 'dotfiles'));
+  writeFileSync(real, '{"env":{"K":"secret"}}');
+  chmodSync(real, 0o600);
+  mkdirSync(join(home, '.claude'));
+  const link = join(home, '.claude', 'settings.json');
+  symlinkSync(real, link);
+  assert.equal(claude.installHook('user', installHookCopy('user')).changed, true);
+  assert.ok(lstatSync(link).isSymbolicLink(), 'still a symlink');
+  assert.ok(JSON.parse(readFileSync(real, 'utf8')).hooks.UserPromptSubmit);
+  assert.equal(statSync(real).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(join(home, 'dotfiles')).sort(), ['settings.json']);
+  assert.equal(claude.removeHook('user').changed, true);
+  assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), { env: { K: 'secret' } });
+  assert.equal(statSync(real).mode & 0o777, 0o600);
 }));
