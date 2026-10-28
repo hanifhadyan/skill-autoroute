@@ -59,6 +59,8 @@ test('TRIGGER_PROMPT: nonce block, cap, lessons, starts with a word', () => {
   assert.ok(p.includes('<untrusted-skills-abcdef0123456789>') && p.includes('</untrusted-skills-abcdef0123456789>'));
   assert.ok(!p.includes('x'.repeat(1001)));
   assert.match(p, /data, not instructions/i);
+  assert.ok(p.includes('"\\\\b(goroutine|channels)\\\\b"'));
+  assert.match(p, /JSON string/);
   assert.match(p, /go ahead/);
   assert.match(p, /authority/);
   assert.match(p, /lower/i);
@@ -142,4 +144,54 @@ test('skill missing from response, or with a non-array rules, falls back', async
   const a = fake(() => ok([{ name: 'two', priority: 'x', rules: 'nope' }]));
   const r = await aiTriggers(a, skills, {}, new Recorder());
   assert.deepEqual(r.fellBack.sort(), ['one', 'two']);
+});
+
+test('R28: noisy words are stopped', () => {
+  const t = keywordRules({ name: 'task-runner', description: 'Use when the user wants to go ahead with a task' });
+  assert.ok(t.rules.every((r) => !r[0].includes('ahead')));
+  assert.ok(!matches(t.rules, 'go ahead and merge'));
+  const g = keywordRules(golang).rules[0][0];
+  for (const w of ['patterns', 'error', 'handling', 'writing']) assert.ok(!g.includes(w), w);
+  assert.ok(STOP_WORDS.has('claude') && STOP_WORDS.has('ahead'));
+});
+
+test('keyword rule that is itself a catch-all is dropped', () => {
+  assert.deepEqual(keywordRules({ name: 'continue', description: 'Use when hello' }).rules, []);
+});
+
+test('a control character (decoded \\b) is rejected and the skill falls back', async () => {
+  const skills = [{ name: 'alpha', description: 'Use when parsing zebra' }];
+  const a = fake(() => ok([{ name: 'alpha', priority: 2, rules: [[JSON.parse('"\\b(goroutine)\\b"')]] }]));
+  const r = await aiTriggers(a, skills, {}, new Recorder());
+  assert.deepEqual(r.rejected.map((x) => x.error), ['contains a control character']);
+  assert.deepEqual(r.fellBack, ['alpha']);
+  assert.ok(matches(r.bySkill.get('alpha').rules, 'zebra'));
+});
+
+test('R29: catch-all rules are dropped and the skill falls back', async () => {
+  for (const pat of ['[\\s\\S]', '\\b', 'a|']) {
+    const skills = [{ name: 'alpha', description: 'Use when parsing zebra' }];
+    const a = fake(() => ok([{ name: 'alpha', priority: 2, rules: [[pat]] }]));
+    const r = await aiTriggers(a, skills, {}, new Recorder());
+    assert.deepEqual(r.rejected.map((x) => x.error), ['matches generic prompts'], pat);
+    assert.deepEqual(r.fellBack, ['alpha'], pat);
+    assert.equal(r.bySkill.get('alpha').priority, 50);
+  }
+});
+
+test('no rules at all: omitted from bySkill, listed in fellBack', async () => {
+  const a = fake(() => ok([]));
+  const r = await aiTriggers(a, [{ name: 'x', description: 'Use when hello' }], {}, new Recorder());
+  assert.equal(r.bySkill.size, 0);
+  assert.deepEqual(r.fellBack, ['x']);
+});
+
+test('at most 4 rules kept, effort passed through, name capped in prompt', async () => {
+  const long = 'n'.repeat(300);
+  const a = fake(() => ok([{ name: long, priority: 5, rules: [1, 2, 3, 4, 5, 6].map((i) => [`\\bzeb${i}\\b`]) }]));
+  const r = await aiTriggers(a, [{ name: long, description: 'Use when zebra' }], { model: 'haiku', effort: 'low' }, new Recorder());
+  assert.equal(a.calls[0].effort, 'low');
+  assert.ok(!a.calls[0].prompt.includes('n'.repeat(101)));
+  assert.deepEqual(r.fellBack, []);
+  assert.equal(r.bySkill.get(long).rules.length, 4);
 });
