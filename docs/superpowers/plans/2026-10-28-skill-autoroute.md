@@ -76,7 +76,7 @@ Both tools use the same hook config shape, confirmed from a real `~/.codex/hooks
   - `fakeCli(dir, name, script) -> path`: writes an executable `name` in `dir` that runs the given Node source; tests prepend `dir` to `PATH`.
   - `runHook(stdinJson, env) -> {code, stdout, stderr, ms}`: spawns `node hook/route.js`.
 
-- [ ] **Step 1:** `package.json`: `name: "skill-autoroute"`, `version: "0.1.0"`, `type: "module"`, `bin: {"skill-autoroute": "bin/cli.js"}`, `engines: {"node": ">=18"}`, `files: ["bin","src","hook","skill"]`, `scripts: {"test": "node --test test/"}`, dependency `@clack/prompts` (latest 0.x release at least two weeks old, exact version). `.gitignore`: `node_modules/`. LICENSE: MIT, "Hanif Hadyan S".
+- [ ] **Step 1:** `package.json`: `name: "skill-autoroute"`, `version: "0.1.0"`, `type: "module"`, `bin: {"skill-autoroute": "bin/cli.js"}`, `engines: {"node": ">=20.12"}`, `files: ["bin","src","hook","skill"]`, `scripts: {"test": "node --test test/*.test.js"}`, dependency `@clack/prompts` (1.8.1, exact version). `.gitignore`: `node_modules/`. LICENSE: MIT, "Hanif Hadyan S".
 - [ ] **Step 2:** Write `test/helpers.test.js`: `fakeCli` output is executable and prints what its script prints; `fakeHome` dir exists and is removed by `cleanup()`.
 - [ ] **Step 3:** Run `npm test`. Expected: FAIL (helpers missing).
 - [ ] **Step 4:** Implement `test/helpers.js`. `runHook` may print nothing yet; it only needs to spawn and time.
