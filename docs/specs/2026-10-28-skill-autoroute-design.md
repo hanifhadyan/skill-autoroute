@@ -6,7 +6,7 @@ Status: draft, waiting for review
 ## 1. Purpose
 
 `skill-autoroute` is a public npm package. It installs a per-prompt hook that tells a coding agent which of its installed
-skills fit the current prompt. It is a standalone version of foreman's `router.py`, with three additions:
+skills fit the current prompt. It grew out of a hand-written `router.py` rule table, with three additions:
 
 - It finds the skills that are installed, instead of using a hand-written list.
 - It scans those skills for security problems and duplicates, and lets the user choose which skills the router may name.

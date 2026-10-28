@@ -173,7 +173,7 @@ Stale line, exact, on a new line: `N skills changed since the last generate. Run
 The hook reads the user table from `~/.config/skill-autoroute/routes.json` and, when present, `<cwd>/.skill-autoroute/routes.json`; it reads the prompt from the field recorded in Task 2. With `SKILL_AUTOROUTE_LOG=1` in the hook's env (set by `install --log`), it appends `ISO-time<TAB>hint count<TAB>hint chars` to `logPath()`.
 
 - [ ] **Step 1: Tests (`table.test.js`).** Round trip write/read; `readTable` returns `null` for missing or corrupt file; `mergeTables` lets a project entry replace a user entry with the same `name`.
-- [ ] **Step 2: Tests (`hook.test.js`), ported from foreman `router.py` cases with fixture skills `golang-patterns`, `vibe-security`, `no-ai-slop`:**
+- [ ] **Step 2: Tests (`hook.test.js`), ported from the original `router.py` cases with fixture skills `golang-patterns`, `vibe-security`, `no-ai-slop`:**
   - `route("go ahead and fix it", t) === null`
   - `route("the subagent has no authority", t) === null`; `route("fix the oauth login", t)` names `vibe-security`.
   - `route("rewrite the readme", t)` names `no-ai-slop`; `route("rewrite the parser", t) === null` (two-pattern rule).
