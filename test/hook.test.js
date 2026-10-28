@@ -129,6 +129,8 @@ test('stale: a symlink in a root to a skill the table knows is not new', () => {
   try {
     const elsewhere = join(s.home, 'store');
     const real = s.mk(elsewhere, 'linked');
+    const old = new Date(Date.parse(GEN) - 60000);
+    for (const p of [real, dirname(real)]) utimesSync(p, old, old);
     s.t.skills.push(sk('linked', [['zzz']], 2, { path: real }));
     symlinkSync(dirname(real), join(s.root, 'linked'));
     assert.equal(staleCount(s.t), 0);
