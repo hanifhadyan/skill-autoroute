@@ -23,7 +23,7 @@ const cacheOf = (...rows) => ({ models: rows.map(([slug, visibility]) => ({ slug
 test('tier lists and step defaults', () => {
   assert.deepEqual(CODEX_TIERS, { small: ['gpt-6-luna', 'gpt-5.6-luna'], mid: ['gpt-6.1-sol', 'gpt-6-sol'] });
   assert.deepEqual(STEP_DEFAULTS.probe, { claude: ['haiku', 'low'], codex: ['small', 'low'] });
-  assert.deepEqual(STEP_DEFAULTS.triggers, STEP_DEFAULTS.probe);
+  assert.deepEqual(STEP_DEFAULTS.triggers, { claude: ['sonnet', 'low'], codex: ['mid', 'low'] }); // judged: sonnet rules beat haiku rules
   assert.deepEqual(STEP_DEFAULTS.dedupe, { claude: ['sonnet', 'medium'], codex: ['mid', 'medium'] });
   assert.deepEqual(STEP_DEFAULTS.scan, STEP_DEFAULTS.dedupe);
 });

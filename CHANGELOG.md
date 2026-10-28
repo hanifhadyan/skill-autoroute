@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.3.0] - 2026-10-28
+
+### Changed
+
+- Trigger rules are built from a task word plus an object word (for example "add" with "column"),
+  name everyday things people point at (README, table, page) and never fire on chat words such as
+  agent, spec or fix alone. Up to 6 rules per skill.
+- Sonnet (Codex: a mid model) writes the trigger rules by default. On 1,616 real prompts, precision
+  rose from 35.5% to 59.1% and relative recall from 50% to 59.1%, with fewer hint tokens per prompt
+  (12.9 to 10.8).
+- More ordinary replies ("fix it", "run it", "ask the agent") are blocked from firing a rule.
+
+### Added
+
+- `routes.json` records the rules version. After an update that changes how rules are written,
+  `regenerate` rebuilds every skill's rules without scanning again.
+
+### Fixed
+
+- A failed AI call during `regenerate` keeps a skill's working rules instead of replacing them with
+  keyword rules.
+- `regenerate --model triggers=...` records the model that rebuilt the rules.
+
 ## [0.2.1] - 2026-10-28
 
 ### Added
@@ -45,6 +68,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.3.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/hanifhadyan/skill-autoroute/releases/tag/v0.1.0

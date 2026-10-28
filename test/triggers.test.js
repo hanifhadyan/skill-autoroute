@@ -64,6 +64,9 @@ test('TRIGGER_PROMPT: nonce block, cap, lessons, starts with a word', () => {
   assert.match(p, /go ahead/);
   assert.match(p, /authority/);
   assert.match(p, /lower/i);
+  assert.match(p, /1 to 6 rules/);
+  assert.match(p, /single pattern/i);
+  assert.match(p, /add a column to the users table/);
   assert.match(TRIGGER_PROMPT([]), /untrusted-skills-[0-9a-f]{16}>/);
   assert.notEqual(TRIGGER_PROMPT([]), TRIGGER_PROMPT([]));
 });
@@ -187,16 +190,16 @@ test('no rules at all: omitted from bySkill, listed in fellBack', async () => {
   assert.deepEqual(r.fellBack, ['x']);
 });
 
-test('at most 4 rules kept, effort passed through, long names still match', async () => {
+test('at most 6 rules kept, effort passed through, long names still match', async () => {
   const long = 'n'.repeat(300);
   const a = fake(({ prompt }) => {
     assert.ok(prompt.includes(JSON.stringify(long))); // the model sees the full name
-    return ok([{ name: long, priority: 5, rules: [1, 2, 3, 4, 5, 6].map((i) => [`\\bzeb${i}\\b`]) }]);
+    return ok([{ name: long, priority: 5, rules: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => [`\\bzeb${i}\\b`]) }]);
   });
   const r = await aiTriggers(a, [{ name: long, description: 'Use when zebra' }], { model: 'haiku', effort: 'low' }, new Recorder());
   assert.equal(a.calls[0].effort, 'low');
   assert.deepEqual(r.fellBack, []);
-  assert.equal(r.bySkill.get(long).rules.length, 4);
+  assert.equal(r.bySkill.get(long).rules.length, 6);
 });
 
 test('R30: topic words survive the generic-prompt guard', async () => {

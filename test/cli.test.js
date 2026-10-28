@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fakeHome, fakeCli, runHook } from './helpers.js';
+import { RULES_VERSION } from '../src/triggers.js';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'cli.js');
 const fixture = readFileSync(new URL('./fixtures/claude-headless.json', import.meta.url), 'utf8');
@@ -293,6 +294,33 @@ test('regenerate turns off a changed skill that is now blocked, and fills rules 
     assert.equal(by['vibe-security'].enabled, false);
     assert.equal(by.risky.enabled, true);
     assert.ok(by.risky.patterns.length, 'rules generated for the enabled skill that had none');
+  } finally { s.cleanup(); }
+});
+
+test('regenerate rebuilds rules for every enabled skill when the table has older rules, without rescanning', () => {
+  const s = setup();
+  try {
+    assert.equal(s.run('install', '--yes', '--tools', 'claude', '--ai', 'claude').code, 0);
+    const t = json(s.routes);
+    assert.equal(t.generator.rules, RULES_VERSION);
+    s.run('set', 'alpha', 'off');
+    const old = json(s.routes);
+    delete old.generator.rules; // a table from a version before rules were versioned
+    old.generator.model = 'haiku';
+    writeFileSync(s.routes, JSON.stringify(old));
+    const n = s.readCalls().length;
+    const g = s.run('regenerate', '--yes');
+    assert.equal(g.code, 0, g.out);
+    assert.match(g.out, /rules from an older version: \d+/);
+    const after = s.readCalls().slice(n);
+    assert.equal(after.filter((c) => c.kind === 'scan').length, 0, 'no rescans');
+    const names = after.filter((c) => c.kind === 'triggers').flatMap((c) => c.names);
+    const on = old.skills.filter((x) => x.enabled).map((x) => x.name);
+    assert.deepEqual(names.sort(), [...new Set(on)].sort());
+    const t2 = json(s.routes);
+    assert.equal(t2.generator.rules, RULES_VERSION);
+    assert.equal(t2.generator.model, 'sonnet', 'rebuilt rules name the model that wrote them');
+    assert.equal(t2.skills.find((x) => x.name === 'alpha').enabled, false, 'earlier choice kept');
   } finally { s.cleanup(); }
 });
 

@@ -185,7 +185,8 @@ codex-cli 0.164.0. Your numbers will differ.
 
 | Step                  | Claude Code       | Codex                  |
 | --------------------- | ----------------- | ---------------------- |
-| Login check, triggers | `haiku` · low     | `gpt-6-luna` · low     |
+| Login check           | `haiku` · low     | `gpt-6-luna` · low     |
+| Triggers              | `sonnet` · low    | `gpt-6.1-sol` · low    |
 | Duplicates, AI scan   | `sonnet` · medium | `gpt-6.1-sol` · medium |
 
 
@@ -193,7 +194,7 @@ Codex uses the first model your `models_cache.json` lists (`gpt-6-luna`, then `g
 `gpt-6-sol`). If none is listed, it uses the model in your Codex config and says so. To override one step:
 
 ```bash
-npx skill-autoroute install --model triggers=sonnet
+npx skill-autoroute install --model triggers=haiku
 ```
 
 ---
@@ -204,7 +205,7 @@ npx skill-autoroute install --model triggers=sonnet
 | Command              | What it does                                                   |
 | -------------------- | -------------------------------------------------------------- |
 | `install`            | The full setup flow                                            |
-| `regenerate`         | Update triggers for new or changed skills. Keeps your choices. |
+| `regenerate`         | Update triggers for new or changed skills, or for all skills after an update that changes how triggers are written. Keeps your choices. |
 | `scan`               | Scan and find duplicates only. Writes nothing.                 |
 | `set <skill> on|off` | Turn one skill's hints on or off                               |
 | `status`             | Tools, hook state, skill counts, changed skills                |
