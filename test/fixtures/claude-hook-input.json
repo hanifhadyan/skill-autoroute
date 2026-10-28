@@ -1,0 +1,9 @@
+{
+  "session_id": "redacted",
+  "transcript_path": "redacted",
+  "cwd": "redacted",
+  "prompt_id": "redacted",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "hello"
+}

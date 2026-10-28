@@ -1,0 +1,11 @@
+{
+  "_note": "Documented shape (learn.chatgpt.com/docs/hooks), NOT captured: project hooks need trust, see docs/notes/cli-output.md",
+  "session_id": "redacted",
+  "turn_id": "redacted",
+  "transcript_path": "redacted",
+  "cwd": "redacted",
+  "hook_event_name": "UserPromptSubmit",
+  "model": "gpt-6-luna",
+  "permission_mode": "default",
+  "prompt": "hello"
+}
