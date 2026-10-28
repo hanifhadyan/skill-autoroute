@@ -157,12 +157,32 @@ export function staleCount(table, fs = FS) {
 // Names come from skill files and go into model context: short, plain characters only.
 const shownName = (v) => v.slice(0, MAX_NAME).replace(/[^A-Za-z0-9._:@/ -]/g, '?');
 
-function pick(prompt, table, { tool, fs = FS } = {}) {
+// Where a prompt runs: the base folder and, for a git worktree, its main checkout (from the `gitdir:` line of base/.git).
+function places(base, fs) {
+  if (typeof base !== 'string' || !base) return [];
+  const out = [fs.real(base)];
+  try {
+    const m = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(join(base, '.git'), 'utf8'));
+    const i = m ? m[1].lastIndexOf(`${sep}.git${sep}worktrees${sep}`) : -1;
+    if (i > 0) out.push(fs.real(m[1].slice(0, i)));
+  } catch { /* not a worktree */ }
+  return out;
+}
+
+// An entry with `projects` belongs to those project folders only; without a base it is never hinted.
+const inProject = (s, here, fs) => !Array.isArray(s.projects) || s.projects.some((p) => {
+  if (typeof p !== 'string' || !p) return false;
+  const root = fs.real(p);
+  return here.some((h) => h === root || h.startsWith(root + sep));
+});
+
+function pick(prompt, table, { tool, base, fs = FS } = {}) {
   const text = String(prompt).slice(0, MAX_PROMPT);
+  const here = places(base, fs);
   const ok = (v) => typeof v === 'string' && v !== '';
   const seen = new Set();
   const hits = table.skills
-    .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && /[\\/]SKILL\.md$/.test(s.path) && (!tool || (Array.isArray(s.tools) ? s.tools : [s.tool]).includes(tool)))
+    .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && /[\\/]SKILL\.md$/.test(s.path) && (!tool || (Array.isArray(s.tools) ? s.tools : [s.tool]).includes(tool)) && inProject(s, here, fs))
     .map((s) => ({ s, own: ownFits(s, text) }))
     .filter(({ s, own }) => (own || fits(s.patterns, text)) && fs.mtime(s.path) !== null)
     .sort((a, b) => (b.own - a.own) || ((a.s.priority ?? 1e9) - (b.s.priority ?? 1e9)))
@@ -242,7 +262,7 @@ function main(self) {
     const base = process.env.CLAUDE_PROJECT_DIR || process.cwd();
     const table = merge(load(join(udir, 'routes.json')), resolveProject(load(join(base, '.skill-autoroute', 'routes.json')), base));
     if (!table) return;
-    const hit = pick(prompt, table, { tool: process.argv[2] });
+    const hit = pick(prompt, table, { tool: process.argv[2], base });
     if (!hit) return;
     const ctx = hit.out;
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ctx } }) + '\n');

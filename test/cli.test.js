@@ -420,3 +420,49 @@ test('project install: relative paths only, AI reason text kept out of the table
     assert.match(s.run('status', '--project').out, /stale: 0/);
   } finally { s.cleanup(); }
 });
+
+test('user install routes a known project\'s own skills, scoped to that project', () => {
+  const s = setup();
+  try {
+    skill(join(s.proj, '.claude', 'skills'), 'kanban-groom', 'Grooms kanban boards. Use when grooming kanban boards.');
+    writeFileSync(join(s.home, '.claude.json'), JSON.stringify({ projects: { [s.proj]: {} } }));
+    const r = s.run('install', '--yes', '--tools', 'claude', '--ai', 'none');
+    assert.equal(r.code, 0, r.out);
+    const e = json(s.routes).skills.find((x) => x.name === 'kanban-groom');
+    assert.deepEqual(e.projects, [s.proj]);
+    assert.match(runHook({ prompt: 'groom the kanban board' }, { HOME: s.home }, s.proj).stdout, /kanban-groom/);
+    assert.equal(runHook({ prompt: 'groom the kanban board' }, { HOME: s.home }, s.home).stdout, '');
+  } finally { s.cleanup(); }
+});
+
+test('regenerate takes the scope of unchanged skills from the current discovery', () => {
+  const s = setup();
+  try {
+    const plug = join(s.home, '.claude', 'plugins', 'cache', 'm', 'p', '1.0.0');
+    skill(join(plug, 'skills'), 'kanban-groom', 'Grooms kanban boards. Use when grooming kanban boards.');
+    writeFileSync(join(s.home, '.claude', 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins: { 'p@m': [{ scope: 'user', installPath: plug }] } }));
+    const enable = (file, on) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify({ ...(existsSync(file) ? json(file) : {}), enabledPlugins: { 'p@m': on } })); };
+    const other = join(s.home, 'other');
+    mkdirSync(other);
+    enable(s.settings, true);
+    assert.equal(s.run('install', '--yes', '--tools', 'claude', '--ai', 'none').code, 0);
+    const scope = () => json(s.routes).skills.find((x) => x.name === 'kanban-groom').projects;
+    assert.equal(scope(), undefined, 'enabled for the user: global');
+
+    enable(s.settings, false);
+    enable(join(s.proj, '.claude', 'settings.local.json'), true);
+    writeFileSync(join(s.home, '.claude.json'), JSON.stringify({ projects: { [s.proj]: {} } }));
+    assert.equal(s.run('regenerate', '--yes').code, 0);
+    assert.deepEqual(scope(), [s.proj], 'now enabled in one project only');
+    assert.equal(runHook({ prompt: 'groom the kanban board' }, { HOME: s.home }, other).stdout, '');
+
+    enable(join(other, '.claude', 'settings.local.json'), true);
+    writeFileSync(join(s.home, '.claude.json'), JSON.stringify({ projects: { [s.proj]: {}, [other]: {} } }));
+    assert.equal(s.run('regenerate', '--yes').code, 0);
+    assert.deepEqual(scope(), [s.proj, other], 'a second project is added');
+
+    enable(s.settings, true);
+    assert.equal(s.run('regenerate', '--yes').code, 0);
+    assert.equal(scope(), undefined, 'enabled for the user again: global');
+  } finally { s.cleanup(); }
+});

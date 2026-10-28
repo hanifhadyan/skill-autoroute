@@ -447,3 +447,22 @@ test('control characters in a skill name or path never reach the hint (R36)', ()
   assert.ok(out && !/[\u0000-\u001f\u007f-\u009f]/.test(out), JSON.stringify(out));
   assert.match(out, /ev\?\?31mil\? \(\/s\/a\]0;pwned\/SKILL\.md\)/);
 });
+
+test('projects: a scoped entry hints only inside its project or a git worktree of it', () => {
+  const { home, cleanup } = fakeHome();
+  try {
+    const main = join(home, 'app'), wt = join(home, 'wt'), other = join(home, 'other');
+    mkdirSync(join(main, '.git', 'worktrees', 'x'), { recursive: true });
+    mkdirSync(join(main, 'sub'), { recursive: true });
+    mkdirSync(wt); mkdirSync(other);
+    writeFileSync(join(wt, '.git'), `gitdir: ${join(main, '.git', 'worktrees', 'x')}\n`);
+    const t = { version: 1, generatedAt: GEN, skills: [sk('run-ticket', [['\\bticket\\b']], 10, { projects: [main] }), sk('global', [['\\bticket\\b']], 20)] };
+    const at = (base) => route('work the ticket', t, { base });
+    assert.match(at(main), /run-ticket/);
+    assert.match(at(join(main, 'sub')), /run-ticket/);
+    assert.match(at(wt), /run-ticket/);
+    assert.doesNotMatch(at(other), /run-ticket/);
+    assert.match(at(other), /global/);
+    assert.doesNotMatch(route('work the ticket', t), /run-ticket/, 'no base: scoped entries stay out');
+  } finally { cleanup(); }
+});

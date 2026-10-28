@@ -191,6 +191,7 @@ const entry = (r, gen, scope) => {
   const g = r.enabled ? gen.bySkill.get(r.skill.name) : null;
   return {
     name: r.skill.name, tool: r.skill.tool, tools: r.skill.tools ?? [r.skill.tool], path: keyOf(scope)(r.skill.skillPath), hash: r.skill.hash, enabled: r.enabled,
+    ...(r.skill.projects ? { projects: r.skill.projects } : {}),
     priority: g?.priority ?? 50, patterns: g?.rules ?? [],
     scan: { verdict: r.scan.verdict, partial: r.scan.partial, findings: tableFindings(scope, r.skill, r.scan.findings) }, duplicateOf: r.dup?.of ?? null,
   };
@@ -346,7 +347,9 @@ export async function regenerate(o, ui) {
     if (was(s).patterns?.length && (!g || gen.fellBack.includes(s.name))) continue;
     byPath.set(s.skillPath, { ...was(s), priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
   }
-  const table = tableOf(ctx, skills.map((s) => byPath.get(s.skillPath) ?? was(s)), roots.map(key), old.log);
+  // Scope comes from this discovery, not the old entry: enabling a plugin in another project changes no skill file.
+  const scoped = ({ projects, ...e }, s) => (s.projects ? { ...e, projects: s.projects } : e);
+  const table = tableOf(ctx, skills.map((s) => scoped(byPath.get(s.skillPath) ?? was(s), s)), roots.map(key), old.log);
   keepWords(table, old);
   // unchanged rules still come from the old generator; after a full rebuild the new model wrote them all
   if (!o.ai && old.generator) table.generator = { ...old.generator, rules: RULES_VERSION, ...(outdated && ctx.ai ? { model: table.generator.model } : {}) };

@@ -308,3 +308,40 @@ test('CODEX_HOME moves hooks.json, the config dir check and the codex skills dir
     assert.equal(codex.hasHook('user'), true);
   } finally { delete process.env.CODEX_HOME; }
 }));
+
+test('claude.skillDirs user: known projects add their skills and project-only plugins, scoped to the project', () => env(async ({ home, proj }) => {
+  const mk = (p) => { mkdirSync(p, { recursive: true }); return p; };
+  const both = mk(join(home, '.claude/plugins/cache/m/both/1.0.0/skills'));
+  const local = mk(join(home, '.claude/plugins/cache/m/local/1.0.0/skills'));
+  const entry = (p) => [{ scope: 'user', installPath: join(p, '..'), version: '1' }];
+  writeFileSync(join(home, '.claude/plugins/installed_plugins.json'), JSON.stringify({ plugins: { 'both@m': entry(both), 'local@m': entry(local) } }));
+  writeFileSync(join(home, '.claude/settings.json'), JSON.stringify({ enabledPlugins: { 'both@m': true } }));
+  mk(join(proj, '.claude/skills'));
+  writeFileSync(join(proj, '.claude/settings.local.json'), JSON.stringify({ enabledPlugins: { 'both@m': true, 'local@m': true } }));
+  writeFileSync(join(home, '.claude.json'), JSON.stringify({ projects: { [proj]: {}, [home]: {}, [join(home, 'gone')]: {} } }));
+
+  assert.deepEqual(claude.skillDirs('user'), [
+    { dir: join(home, '.claude/skills'), tool: 'claude', source: 'user' },
+    { dir: both, tool: 'claude', source: 'plugin:both@m' },
+    { dir: join(proj, '.claude/skills'), tool: 'claude', source: 'project', projects: [proj] },
+    { dir: local, tool: 'claude', source: 'plugin:local@m', projects: [proj] },
+  ]);
+  assert.equal(claude.skillDirs('project').some((d) => d.projects), false, 'a project table never carries projects');
+}));
+
+test('claude.skillDirs: a plugin manifest skill list is followed; projectPath in installed_plugins.json names a project', () => env(async ({ home, proj }) => {
+  const mk = (p) => { mkdirSync(p, { recursive: true }); return p; };
+  const plug = mk(join(home, '.claude/plugins/cache/m/nested/1.0.0'));
+  mk(join(plug, 'skills/eng/tdd')); mk(join(plug, 'skills/eng/old')); mk(join(plug, 'skills/misc/pr'));
+  mk(join(plug, '.claude-plugin'));
+  writeFileSync(join(plug, '.claude-plugin/plugin.json'), JSON.stringify({ skills: ['./skills/eng/tdd', './skills/misc/pr', '../../escape'] }));
+  writeFileSync(join(home, '.claude/plugins/installed_plugins.json'), JSON.stringify({ plugins: {
+    'nested@m': [{ scope: 'local', projectPath: proj, installPath: plug, version: '1' }],
+  } }));
+  mk(join(proj, '.claude'));
+  writeFileSync(join(proj, '.claude/settings.local.json'), JSON.stringify({ enabledPlugins: { 'nested@m': true } }));
+  assert.deepEqual(claude.skillDirs('user').slice(1), [
+    { dir: join(plug, 'skills/eng'), tool: 'claude', source: 'plugin:nested@m', only: ['tdd'], projects: [proj] },
+    { dir: join(plug, 'skills/misc'), tool: 'claude', source: 'plugin:nested@m', only: ['pr'], projects: [proj] },
+  ]);
+}));
