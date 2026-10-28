@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { addHook, removeHook as removeHookFrom } from './hookconfig.js';
+import { addHook, removeHook as removeHookFrom, hasHook as hasHookIn } from './hookconfig.js';
 import { runCli, parseJson, onPath, checkPrompt } from './run.js';
 
 export const name = 'claude';
@@ -35,14 +35,16 @@ export function skillDirs(scope) {
 
 export const installHook = (scope, command) => addHook(settings(scope), command);
 export const removeHook = (scope) => removeHookFrom(settings(scope));
+export const hasHook = (scope) => hasHookIn(settings(scope));
 
-export async function headless({ prompt, schema, model, effort, timeoutMs }) {
+// loadUserSettings (bench only): keep the user's settings, hooks and MCP so the routing hook fires.
+export async function headless({ prompt, schema, model, effort, timeoutMs, loadUserSettings = false, env }) {
   checkPrompt(prompt);
   const { stdout, stderr } = await runCli('claude', () => [
     '-p', prompt, '--model', model, '--effort', effort, '--tools', '', '--output-format', 'json',
     '--json-schema', typeof schema === 'string' ? schema : JSON.stringify(schema), '--no-session-persistence',
-    '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands',
-  ], timeoutMs);
+    ...(loadUserSettings ? [] : ['--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands']),
+  ], timeoutMs, env);
   const r = parseJson('claude', stdout, stderr);
   if (r.is_error) throw new Error(`claude reported an error: ${String(r.result).slice(0, 200)}`);
   if (r.structured_output === undefined) throw new Error('claude result has no structured_output');

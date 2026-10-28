@@ -265,3 +265,23 @@ test('config edits keep a symlink and the file mode', () => env(async ({ home })
   assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), { env: { K: 'secret' } });
   assert.equal(statSync(real).mode & 0o777, 0o600);
 }));
+
+test('headless loadUserSettings drops the context-cutting flags and passes env (claude and codex)', () => env(async ({ bin }) => {
+  const envEcho = `out.structured_output.flag = process.env.SA_TEST_FLAG ?? null; out.structured_output.dis = process.env.SKILL_AUTOROUTE_DISABLE ?? null;`;
+  fakeCli(bin, 'claude', claudeScript.replace('console.log', `${envEcho}\nconsole.log`));
+  process.env.SKILL_AUTOROUTE_DISABLE = '1';
+  try {
+    const r = await claude.headless({ prompt: 'p', schema: SCHEMA, model: 'haiku', effort: 'low', loadUserSettings: true, env: { SA_TEST_FLAG: 'x', SKILL_AUTOROUTE_DISABLE: undefined } });
+    for (const f of ['--setting-sources', '--strict-mcp-config', '--disable-slash-commands']) assert.ok(!r.json.argv.includes(f), f);
+    assert.ok(r.json.argv.includes('--no-session-persistence'));
+    assert.equal(r.json.flag, 'x');
+    assert.equal(r.json.dis, null, 'undefined removes an inherited var');
+    const d = await claude.headless({ prompt: 'p', schema: SCHEMA, model: 'haiku', effort: 'low' });
+    assert.ok(d.json.argv.includes('--setting-sources'), 'default path unchanged');
+    assert.equal(d.json.flag, null);
+  } finally { delete process.env.SKILL_AUTOROUTE_DISABLE; }
+  fakeCli(bin, 'codex', codexScript);
+  const c = await codex.headless({ prompt: 'p', schema: SCHEMA, model: 'm', effort: 'low', loadUserSettings: true, env: { A: 'b' } });
+  assert.ok(!c.json.argv.includes('--ignore-user-config'));
+  assert.ok(c.json.argv.includes('read-only'));
+}));

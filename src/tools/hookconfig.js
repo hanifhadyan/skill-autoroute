@@ -72,6 +72,11 @@ export function removeHook(configPath) {
   return { changed: true };
 }
 
+// False when the file is missing or unreadable.
+export function hasHook(configPath) {
+  try { return (load(configPath).cfg.hooks?.[EVENT] ?? []).some((g) => groupHooks(g).some(ours)); } catch { return false; }
+}
+
 // The npx cache can vanish after install, so the hook runs from a copy in the data folder.
 export function installHookCopy(scope) {
   const dest = hookCopyPath(scope);

@@ -232,3 +232,16 @@ test('the hook copy works as route.mjs beside a commonjs package.json', () => {
     assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /hello-skill/);
   } finally { s.cleanup(); }
 });
+
+test('a table with "log": true logs without the env var (user or project table); never the prompt', () => {
+  for (const which of ['user', 'project']) {
+    const t = { version: 1, generatedAt: new Date().toISOString(), log: true, skills: [sk('hello-skill', [['secretword']])] };
+    const s = which === 'user' ? setup(t) : setup({ version: 1, generatedAt: t.generatedAt, skills: [] }, t);
+    try {
+      runHook(input('please secretword now'), { HOME: s.home, SKILL_AUTOROUTE_LOG: '' }, s.cwd);
+      const log = readFileSync(join(s.udir, 'usage.log'), 'utf8');
+      assert.match(log, /^\d{4}-\d\d-\d\dT[^\t]+\t1\t\d+\n$/, which);
+      assert.ok(!log.includes('secretword'));
+    } finally { s.cleanup(); }
+  }
+});

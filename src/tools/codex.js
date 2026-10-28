@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { addHook, removeHook as removeHookFrom } from './hookconfig.js';
+import { addHook, removeHook as removeHookFrom, hasHook as hasHookIn } from './hookconfig.js';
 import { runCli, parseJson, onPath, checkPrompt } from './run.js';
 
 export const name = 'codex';
@@ -25,18 +25,19 @@ export function installHook(scope, command) {
   return r.changed ? { ...r, note: 'run /hooks once in Codex to trust the new hook' } : r;
 }
 export const removeHook = (scope) => (scope === 'project' ? { ...NO_PROJECT } : removeHookFrom(hooksFile()));
+export const hasHook = () => hasHookIn(hooksFile()); // codex has only the user-level hook
 
-export async function headless({ prompt, schema, model, effort, timeoutMs }) {
+export async function headless({ prompt, schema, model, effort, timeoutMs, loadUserSettings = false, env }) {
   checkPrompt(prompt);
   const { stdout, stderr } = await runCli('codex', (dir) => {
     const schemaFile = join(dir, 'schema.json');
     writeFileSync(schemaFile, typeof schema === 'string' ? schema : JSON.stringify(schema));
     return [
-      'exec', '--skip-git-repo-check', '--json', '--ignore-user-config', '-s', 'read-only',
+      'exec', '--skip-git-repo-check', '--json', ...(loadUserSettings ? [] : ['--ignore-user-config']), '-s', 'read-only',
       ...(model ? ['-m', model] : []), '-c', `model_reasoning_effort=${effort}`,
       '--output-schema', schemaFile, prompt,
     ];
-  }, timeoutMs);
+  }, timeoutMs, env);
   let text, usage;
   for (const line of stdout.split('\n')) {
     let ev;

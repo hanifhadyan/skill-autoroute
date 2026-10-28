@@ -30,7 +30,7 @@ function fits(rules, text) {
   });
 }
 
-function staleCount(table, statMtime) {
+export function staleCount(table, statMtime = mtime) {
   const gen = Date.parse(table.generatedAt);
   if (Number.isNaN(gen)) return 0;
   const newer = (p) => { try { return statMtime(p) > gen; } catch { return false; } };
@@ -82,6 +82,7 @@ export function merge(user, project) {
     generatedAt: gens[0] ?? '',
     roots: [...new Set([...u.roots, ...p.roots])],
     skills: [...u.skills.filter((s) => !names.has(s.name)), ...p.skills],
+    ...(u.log === true || p.log === true ? { log: true } : {}),
   };
 }
 
@@ -97,7 +98,7 @@ function main() {
     if (!hit) return;
     const ctx = hit.out;
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ctx } }) + '\n');
-    if (process.env.SKILL_AUTOROUTE_LOG === '1') {
+    if (process.env.SKILL_AUTOROUTE_LOG === '1' || table.log === true) {
       try {
         mkdirSync(udir, { recursive: true });
         appendFileSync(join(udir, 'usage.log'), `${new Date().toISOString()}\t${hit.count}\t${ctx.length}\n`);

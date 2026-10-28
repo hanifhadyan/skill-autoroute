@@ -9,7 +9,8 @@ const head = (s) => s.trim().slice(0, 200);
 // Runs `cmd` with no shell, stdin ignored, in a fresh temp cwd that is removed afterwards.
 // `buildArgs(dir)` may write helper files into that dir. Resolves {stdout, stderr}; rejects on
 // spawn error, non-zero exit or timeout.
-export function runCli(cmd, buildArgs, timeoutMs = 180000) {
+// `env` (optional) is merged over process.env; a key set to undefined removes it.
+export function runCli(cmd, buildArgs, timeoutMs = 180000, env) {
   const dir = mkdtempSync(join(tmpdir(), 'skill-autoroute-run-'));
   return new Promise((resolve, reject) => {
     let out = '', err = '', done = false, timer;
@@ -22,7 +23,7 @@ export function runCli(cmd, buildArgs, timeoutMs = 180000) {
     };
     let child;
     try {
-      child = spawn(cmd, buildArgs(dir), { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(cmd, buildArgs(dir), { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], env: env && { ...process.env, ...env } });
     } catch (e) { return finish(reject, e); }
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
