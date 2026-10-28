@@ -11,6 +11,8 @@ const mtime = (p) => {
   try { return statSync(p).mtimeMs; } catch { return 0; } // missing file or folder: ignored
 };
 
+// shortcut: patterns are validated at install/regenerate time; hand-edited patterns are not re-checked here, so a
+// catastrophic regex in a hand-edited table can hang the hook. Upgrade: run the validation in the hook if users edit tables by hand.
 const compile = (src) => {
   try { return new RegExp(src, 'i'); } catch { return null; }
 };
@@ -39,9 +41,12 @@ function staleCount(table, statMtime) {
 
 function pick(prompt, table, statMtime) {
   const text = String(prompt).slice(0, MAX_PROMPT);
+  const ok = (v) => typeof v === 'string' && v !== '';
+  const seen = new Set();
   const hits = table.skills
-    .filter((s) => s && s.enabled && fits(s.patterns, text))
+    .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && fits(s.patterns, text))
     .sort((a, b) => (a.priority ?? 1e9) - (b.priority ?? 1e9))
+    .filter((s) => !seen.has(s.name) && seen.add(s.name))
     .slice(0, MAX_HINTS);
   if (!hits.length) return null;
   let out = 'Skills that fit this work (read each SKILL.md before you start): ' + hits.map((s) => `${s.name} (${s.path})`).join('; ') + '.';
@@ -53,21 +58,30 @@ function pick(prompt, table, statMtime) {
 export const route = (prompt, table, statMtime = mtime) => pick(prompt, table, statMtime)?.out ?? null;
 
 const load = (p) => {
-  try {
-    const t = JSON.parse(readFileSync(p, 'utf8'));
-    return t && Array.isArray(t.skills) ? t : null;
-  } catch { return null; }
+  try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 };
 
-// Keep in step with mergeTables() in src/table.js.
-function merge(user, project) {
-  if (!user || !project) return user ?? project;
-  const names = new Set(project.skills.map((s) => s.name));
-  const gens = [user.generatedAt, project.generatedAt].filter(Boolean).sort();
+// Keep only what the hook can use: skills as plain objects, roots as strings. One bad entry must not disable the hook.
+function clean(t) {
+  if (!t || typeof t !== 'object' || !Array.isArray(t.skills)) return null;
   return {
-    generatedAt: gens[0],
-    roots: [...(user.roots ?? []), ...(project.roots ?? [])],
-    skills: [...user.skills.filter((s) => !names.has(s.name)), ...project.skills],
+    ...t,
+    skills: t.skills.filter((s) => s && typeof s === 'object' && !Array.isArray(s)),
+    roots: Array.isArray(t.roots) ? t.roots.filter((r) => typeof r === 'string') : [],
+  };
+}
+
+// Project entries replace user entries of the same name. Oldest valid generatedAt wins: stale if either side is.
+export function merge(user, project) {
+  const u = clean(user), p = clean(project);
+  if (!u || !p) return u ?? p;
+  const names = new Set(p.skills.map((s) => s.name));
+  const gens = [u.generatedAt, p.generatedAt].filter((g) => !Number.isNaN(Date.parse(g))).sort((x, y) => Date.parse(x) - Date.parse(y));
+  return {
+    ...u,
+    generatedAt: gens[0] ?? '',
+    roots: [...new Set([...u.roots, ...p.roots])],
+    skills: [...u.skills.filter((s) => !names.has(s.name)), ...p.skills],
   };
 }
 

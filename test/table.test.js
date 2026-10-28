@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { writeFileSync, readdirSync } from 'node:fs';
+import { writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { fakeHome } from './helpers.js';
 import { readTable, writeTable, mergeTables } from '../src/table.js';
 import { dataDir, routesPath, reportPath, logPath, hookCopyPath } from '../src/paths.js';
@@ -40,6 +40,23 @@ test('mergeTables: a project entry replaces the user entry with the same name', 
   assert.equal(m.skills.find((s) => s.name === 'a').path, '/p/a/SKILL.md');
 });
 
+test('mergeTables dedupes roots and keeps the oldest generatedAt', () => {
+  const m = mergeTables(table([], { roots: ['/r'], generatedAt: '2026-10-28T12:00:00Z' }), table([], { roots: ['/r', '/q'] }));
+  assert.deepEqual(m.roots, ['/r', '/q']);
+  assert.equal(m.generatedAt, '2026-10-28T10:00:00Z');
+  assert.equal(m.version, 1);
+});
+
+test('writeTable removes its temp file when the write fails', () => {
+  const { home, cleanup } = fakeHome();
+  try {
+    const p = join(home, 'routes.json');
+    mkdirSync(p); // renaming a file over a directory fails
+    assert.throws(() => writeTable(p, table([])));
+    assert.deepEqual(readdirSync(home), ['routes.json']);
+  } finally { cleanup(); }
+});
+
 test('mergeTables tolerates a missing side', () => {
   const t = table([skill('a')]);
   assert.deepEqual(mergeTables(t, null).skills, t.skills);
@@ -57,6 +74,6 @@ test('paths derive from HOME and cwd', () => {
     assert.equal(routesPath('user'), join(home, '.config', 'skill-autoroute', 'routes.json'));
     assert.equal(reportPath('project'), join(process.cwd(), '.skill-autoroute', 'install-report.json'));
     assert.equal(logPath(), join(home, '.config', 'skill-autoroute', 'usage.log'));
-    assert.equal(hookCopyPath('user'), join(home, '.config', 'skill-autoroute', 'route.js'));
+    assert.equal(hookCopyPath('user'), join(home, '.config', 'skill-autoroute', 'route.mjs'));
   } finally { process.env.HOME = old; cleanup(); }
 });

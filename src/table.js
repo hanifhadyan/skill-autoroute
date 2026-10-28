@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { merge } from '../hook/route.js';
 
 export function readTable(path) {
   try {
@@ -13,22 +14,16 @@ export function readTable(path) {
 export function writeTable(path, table) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(table, null, 2) + '\n');
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, JSON.stringify(table, null, 2) + '\n');
+    renameSync(tmp, path);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* nothing to clean */ }
+    throw e;
+  }
 }
 
-// Keep in step with merge() in hook/route.js (the hook cannot import src/).
 export function mergeTables(user, project) {
-  const u = user ?? { skills: [] };
-  const p = project ?? { skills: [] };
-  const names = new Set(p.skills.map((s) => s.name));
-  const roots = [...new Set([...(u.roots ?? []), ...(p.roots ?? [])])];
-  const gens = [u, p].map((t) => t.generatedAt).filter(Boolean).sort(); // oldest wins: stale if either side is
-  return {
-    version: 1,
-    generatedAt: gens[0] ?? '',
-    generator: (project ?? user)?.generator,
-    ...(roots.length ? { roots } : {}),
-    skills: [...u.skills.filter((s) => !names.has(s.name)), ...p.skills],
-  };
+  const m = merge(user, project) ?? { generatedAt: '', skills: [] };
+  return { version: 1, generator: (project ?? user)?.generator, ...m };
 }

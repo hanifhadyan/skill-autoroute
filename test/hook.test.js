@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, copyFileSync } from 'node:fs';
 import { fakeHome, runHook } from './helpers.js';
-import { route } from '../hook/route.js';
+import { spawnSync } from 'node:child_process';
+import { route, merge } from '../hook/route.js';
 
 const GEN = '2026-10-28T10:00:00Z';
 const genMs = Date.parse(GEN);
@@ -188,5 +189,46 @@ test('SKILL_AUTOROUTE_LOG=1 appends a 3-field line without the prompt; no log by
       const p = join(s.home, f);
       try { assert.ok(!readFileSync(p, 'utf8').includes('please secretword now')); } catch (e) { if (e.code !== 'EISDIR') throw e; }
     }
+  } finally { s.cleanup(); }
+});
+
+test('malformed entries in either table never disable the hook', () => {
+  const user = { version: 1, generatedAt: new Date().toISOString(), skills: [sk('good', [['hello']])] };
+  const proj = { generatedAt: 'nonsense', roots: 5, skills: [null, 7, 'x', [], {}, { name: 'noPath', enabled: true, patterns: [['hello']] }, { name: 'bad', path: '/b', enabled: true, patterns: 'hello' }] };
+  const s = setup(user, proj);
+  try {
+    const r = runHook(claudeInput, { HOME: s.home }, s.cwd);
+    assert.equal(r.code, 0);
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, 'Skills that fit this work (read each SKILL.md before you start): good (/s/good/SKILL.md).');
+  } finally { s.cleanup(); }
+  const t = { generatedAt: GEN, roots: ['/r', 3, null], skills: [null, sk('ok', [['draft']])] };
+  assert.ok(route('draft', merge(t, null)).includes('ok ('));
+});
+
+test('merge dedupes roots so a root in both tables counts once', () => {
+  const a = { generatedAt: GEN, roots: ['/r'], skills: [] };
+  const b = { generatedAt: GEN, roots: ['/r'], skills: [sk('x', [['draft']])] };
+  const out = route('draft', merge(a, b), (p) => (p === '/r' ? genMs + 1 : 0));
+  assert.ok(out.endsWith('\n1 skills changed since the last generate. Run: npx skill-autoroute regenerate'));
+});
+
+test('duplicate names use one hint slot, first by priority', () => {
+  const t = { generatedAt: GEN, skills: [sk('d', [['draft']], 2, { path: '/second' }), sk('d', [['draft']], 1, { path: '/first' }), sk('e', [['draft']], 3), sk('f', [['draft']], 4), sk('g', [['draft']], 5)] };
+  const out = route('draft', t);
+  assert.equal(out.split('; ').length, 3);
+  assert.ok(out.includes('d (/first)') && !out.includes('/second') && out.includes('e (') && out.includes('f ('));
+});
+
+test('the hook copy works as route.mjs beside a commonjs package.json', () => {
+  const t = { version: 1, generatedAt: new Date().toISOString(), skills: [sk('hello-skill', [['hello']])] };
+  const s = setup(t);
+  try {
+    const dir = join(s.home, 'copy');
+    mkdirSync(dir);
+    copyFileSync(new URL('../hook/route.js', import.meta.url), join(dir, 'route.mjs'));
+    writeFileSync(join(dir, 'package.json'), '{"type":"commonjs"}');
+    const r = spawnSync('node', [join(dir, 'route.mjs')], { input: JSON.stringify(claudeInput), env: { ...process.env, HOME: s.home }, cwd: s.cwd, encoding: 'utf8' });
+    assert.equal(r.status, 0);
+    assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /hello-skill/);
   } finally { s.cleanup(); }
 });
