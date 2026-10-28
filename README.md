@@ -6,7 +6,7 @@
 
 For Claude Code and Codex · No API key · Zero tokens when nothing matches
 
-![npm](https://img.shields.io/npm/v/skill-autoroute?color=cb3837&logo=npm)
+[![npm](https://img.shields.io/npm/v/skill-autoroute?color=cb3837&logo=npm)](https://www.npmjs.com/package/skill-autoroute)
 ![node](https://img.shields.io/badge/node-%E2%89%A520.12-339933?logo=node.js&logoColor=white)
 ![tools](https://img.shields.io/badge/works%20with-Claude%20Code%20%7C%20Codex-8A63D2)
 ![license](https://img.shields.io/badge/license-MIT-blue)

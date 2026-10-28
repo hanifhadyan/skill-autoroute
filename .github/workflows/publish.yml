@@ -22,7 +22,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the GitHub release and its tag
       id-token: write # npm trusted publishing (OIDC), no NPM_TOKEN secret
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +31,21 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      - name: Publish if version is new
+      - name: Publish and release if version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
           if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
             echo "$name@$version is already on npm, skipping"
           else
+            # Release notes are this version's CHANGELOG.md section; fail before publishing if it is missing.
+            notes=$(awk -v h="## [$version]" 'index($0, h) == 1 {f=1; next} /^(## |\[[^]]+\]: )/ {f=0} f' CHANGELOG.md)
+            if [ -z "$(echo "$notes" | tr -d '[:space:]')" ]; then
+              echo "CHANGELOG.md has no section for $version" >&2
+              exit 1
+            fi
             npm publish --access public
+            gh release create "v$version" --target "$GITHUB_SHA" --title "v$version" --notes "$notes"
           fi
