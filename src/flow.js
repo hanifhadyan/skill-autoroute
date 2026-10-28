@@ -8,14 +8,13 @@ import { discover } from './discover.js';
 import { scanStatic, label } from './scan/static.js';
 import { aiScan, mergeScan } from './scan/ai.js';
 import { candidateGroups, aiDedupe, MAX_GROUP } from './dedupe.js';
-import { aiTriggers, keywordRules, TRIGGER_PROMPT } from './triggers.js';
+import { aiTriggers, keywordRules, TRIGGER_PROMPT, RULES_VERSION, genericMatch } from './triggers.js';
 import { estimate, Recorder, formatReport, writeReport, hookReport, num } from './usage.js';
 import { readTable, writeTable, mergeTables } from './table.js';
 import { pickModel } from './models.js';
-import { RULES_VERSION } from './triggers.js';
 import { routesPath, reportPath, hookCopyPath, logPath } from './paths.js';
 import { installHookCopy, hookCommand, checkConfig } from './tools/hookconfig.js';
-import { route, staleCount, resolveProject } from '../hook/route.js';
+import { route, staleCount, resolveProject, wordsPattern } from '../hook/route.js';
 
 export const ADAPTERS = { claude, codex };
 export class Cancel extends Error {}
@@ -294,6 +293,7 @@ export async function install(o, ui) {
   const rows = await pickRows(buildRows(skills, scans, await runDedupe(skills, ctx, ui)), ui);
   const gen = await generate(rows.filter((r) => r.enabled).map((r) => r.skill), ctx, ui);
   const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log);
+  keepWords(table, readTable(routesPath(scope)));
   while (!ui.yes) {
     const p = await ui.text('Preview: type a prompt to see its hints (empty to finish)');
     if (!p) break;
@@ -347,6 +347,7 @@ export async function regenerate(o, ui) {
     byPath.set(s.skillPath, { ...was(s), priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
   }
   const table = tableOf(ctx, skills.map((s) => byPath.get(s.skillPath) ?? was(s)), roots.map(key), old.log);
+  keepWords(table, old);
   // unchanged rules still come from the old generator; after a full rebuild the new model wrote them all
   if (!o.ai && old.generator) table.generator = { ...old.generator, rules: RULES_VERSION, ...(outdated && ctx.ai ? { model: table.generator.model } : {}) };
   printRows(rows, ui);
@@ -354,6 +355,44 @@ export async function regenerate(o, ui) {
   writeReport(reportPath(scope), ctx.rec, ctx.est);
   installHookCopy(scope); // a newer package version brings a newer hook
   summary(ctx, gen, [], ui);
+}
+
+// Own trigger words belong to the user: a rebuilt table takes them over by skill path.
+function keepWords(table, old) {
+  const words = new Map((old?.skills ?? []).filter((s) => Array.isArray(s.words) && s.words.length).map((s) => [s.path, s.words]));
+  for (const s of table.skills) if (words.has(s.path)) s.words = words.get(s.path);
+}
+
+const MAX_OWN_WORDS = 20;
+const MAX_OWN_WORD = 60;
+export function setWords(o, ui, name, action, ...words) {
+  const p = routesPath(scopeOf(o));
+  const t = readTable(p);
+  if (!t) throw new Error(`no table at ${show(p)}; run install first`);
+  if (!name) {
+    const own = t.skills.filter((s) => s.words?.length);
+    if (!own.length) ui.log('No own trigger words yet. Add some: npx skill-autoroute words <skill> add <word> [more words]');
+    for (const s of own) ui.log(`${show(s.name)}: ${s.words.map(show).join(', ')}`);
+    return;
+  }
+  const hits = t.skills.filter((s) => s.name === name);
+  if (!hits.length) throw new Error(`no skill named "${show(name)}" in ${show(p)}`);
+  if (!action) return ui.log(`${show(name)}: ${hits[0].words?.map(show).join(', ') || 'no own words'}`);
+  if (!['add', 'remove'].includes(action) || !words.length) throw new Error('usage: skill-autoroute words [<skill> [add|remove <word> [more words]]]');
+  const clean = words.map((w) => w.trim().replace(/\s+/g, ' '));
+  if (clean.some((w) => !w || w.length > MAX_OWN_WORD || /[\u0000-\u001f\u007f]/.test(w))) throw new Error(`each word or phrase must be 1 to ${MAX_OWN_WORD} characters of plain text`);
+  for (const s of hits) {
+    const now = s.words ?? [];
+    const next = action === 'add' ? [...new Set([...now, ...clean])] : now.filter((w) => !clean.includes(w));
+    if (next.length > MAX_OWN_WORDS) throw new Error(`a skill can have at most ${MAX_OWN_WORDS} own words; ${show(name)} would have ${next.length}`);
+    if (next.length) s.words = next; else delete s.words;
+  }
+  writeTable(p, t);
+  const list = hits[0].words ?? [];
+  ui.log(`${show(name)}: ${list.map(show).join(', ') || 'no own words'}`);
+  const generic = list.length && genericMatch([wordsPattern(list)]);
+  if (generic) ui.log(`Warning: these words also fire on ordinary replies such as "${generic}", so ${show(name)} will be hinted often.`);
+  if (hits.every((s) => !s.enabled)) ui.log(`${show(name)} is off, so it gets no hints. Run: npx skill-autoroute set ${show(name)} on`);
 }
 
 export function setSkill(o, ui, name, state) {

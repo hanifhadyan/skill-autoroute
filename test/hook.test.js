@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, copyFileSync, symlinkSync, rmSync, realpathSync, utimesSync } from 'node:fs';
 import { fakeHome, runHook } from './helpers.js';
 import { spawnSync } from 'node:child_process';
-import { route as realRoute, merge, staleCount, resolveProject, hasNestedQuantifier } from '../hook/route.js';
+import { route as realRoute, merge, staleCount, resolveProject, hasNestedQuantifier, wordsPattern } from '../hook/route.js';
 
 const GEN = '2026-10-28T10:00:00Z';
 // Unit tests use fake paths: every file exists, nothing is newer than the table, roots are empty.
@@ -54,6 +54,30 @@ test('a bad pattern is skipped and never throws; matching is case-insensitive', 
   const t = { version: 1, generatedAt: GEN, skills: [sk('bad', [['(unclosed'], ['draft', '(also bad']]), sk('good', [['DRAFT']], 2)] };
   const out = route('Draft it', t);
   assert.ok(out.includes('good (') && !out.includes('bad ('));
+});
+
+test('own words: a whole-word match hints the skill first; special characters are literal; off skills stay off', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [
+    sk('ai-rules', [['\\breadme\\b']], 1),
+    sk('mine', [], 90, { words: ['polish', 'README text', 'c++'] }),
+    sk('off', [], 1, { words: ['polish'], enabled: false }),
+  ] };
+  assert.ok(route('polish the README text', t).includes(': mine (/s/mine/SKILL.md); ai-rules ('), 'own words rank before AI rules');
+  assert.match(route('port this to C++ now', t), /mine/);
+  assert.match(route('the readme  text is old', t), /mine/, 'a phrase matches across extra spaces');
+  assert.equal(route('polishing', t), null, 'whole words only');
+  assert.equal(route('c+ or c', t), null, '+ is literal, not a quantifier');
+  assert.ok(!route('polish it', t).includes('off ('));
+});
+
+test('own words: malformed entries are ignored and never throw', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [
+    sk('a', [], 10, { words: 'polish' }), sk('b', [], 10, { words: [1, null, '', 'x'.repeat(200)] }), sk('c', [], 10, { words: ['ok', 7] }),
+  ] };
+  assert.equal(route('polish', t), null);
+  assert.match(route('ok', t), /: c \(/);
+  assert.equal(wordsPattern(['a.b', 'two words']), '(?<!\\w)(a\\.b|two\\s+words)(?!\\w)');
+  assert.equal(wordsPattern([]), null);
 });
 
 test('only the first 20000 characters are matched', () => {

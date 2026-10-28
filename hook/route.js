@@ -9,6 +9,8 @@ const MAX_PROMPT = 20000; // defence in depth against a slow pattern
 const MAX_HINTS = 3;
 const MAX_PATTERN = 300; // same limit as src/validate.js
 const MAX_NAME = 100;
+const MAX_WORDS = 20; // own trigger words per skill (`skill-autoroute words`)
+const MAX_WORD = 60;
 
 // Real file system; tests pass fakes. mtime is null when the path is missing.
 const FS = {
@@ -120,6 +122,15 @@ function fits(rules, text) {
   });
 }
 
+// Own words are literal text, so they cannot carry a slow pattern. Edges are lookarounds, not \b, so "c++" still matches.
+export function wordsPattern(words) {
+  if (!Array.isArray(words)) return null;
+  const ok = words.filter((w) => typeof w === 'string' && w.trim() && w.length <= MAX_WORD).slice(0, MAX_WORDS);
+  if (!ok.length) return null;
+  return `(?<!\\w)(${ok.map((w) => w.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')).join('|')})(?!\\w)`;
+}
+const ownFits = (s, text) => { const src = wordsPattern(s.words); return Boolean(src && new RegExp(src, 'i').test(text)); };
+
 // Stale: a table skill whose SKILL.md is gone or newer than the table (project entries: gone only, since a clone or
 // pull resets file times past the committed generatedAt), plus a skill folder in a root that the table
 // does not know (table paths are real paths; root entries are often symlinks, so they are resolved first).
@@ -152,8 +163,10 @@ function pick(prompt, table, { tool, fs = FS } = {}) {
   const seen = new Set();
   const hits = table.skills
     .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && /[\\/]SKILL\.md$/.test(s.path) && (!tool || (Array.isArray(s.tools) ? s.tools : [s.tool]).includes(tool)))
-    .filter((s) => fits(s.patterns, text) && fs.mtime(s.path) !== null)
-    .sort((a, b) => (a.priority ?? 1e9) - (b.priority ?? 1e9))
+    .map((s) => ({ s, own: ownFits(s, text) }))
+    .filter(({ s, own }) => (own || fits(s.patterns, text)) && fs.mtime(s.path) !== null)
+    .sort((a, b) => (b.own - a.own) || ((a.s.priority ?? 1e9) - (b.s.priority ?? 1e9)))
+    .map(({ s }) => s)
     .filter((s) => !seen.has(s.name) && seen.add(s.name))
     .slice(0, MAX_HINTS);
   if (!hits.length) return null;

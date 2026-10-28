@@ -324,6 +324,50 @@ test('regenerate rebuilds rules for every enabled skill when the table has older
   } finally { s.cleanup(); }
 });
 
+test('words: add, list, remove own trigger words; the hook uses them; regenerate and install keep them', () => {
+  const s = setup();
+  try {
+    assert.equal(s.run('install', '--yes', '--tools', 'claude', '--ai', 'none').code, 0);
+    const add = s.run('words', 'alpha', 'add', 'polish', 'README text');
+    assert.equal(add.code, 0, add.out);
+    const byName = () => Object.fromEntries(json(s.routes).skills.map((x) => [x.name, x]));
+    assert.deepEqual(byName().alpha.words, ['polish', 'README text']);
+    assert.equal(s.run('words', 'alpha', 'add', 'polish').code, 0, 'adding a word twice is fine');
+    assert.deepEqual(byName().alpha.words, ['polish', 'README text']);
+    assert.match(s.run('words', 'alpha').out, /alpha: polish, README text/);
+    assert.match(s.run('words').out, /alpha: polish, README text/);
+
+    const hook = runHook({ prompt: 'please polish the readme text', cwd: s.proj }, { HOME: s.home, SKILL_AUTOROUTE_DISABLE: '', CLAUDE_PROJECT_DIR: '' }, s.proj, ['claude']);
+    assert.match(hook.stdout, /alpha \(/);
+
+    writeFileSync(join(s.skills, 'alpha', 'SKILL.md'), '---\nname: alpha\ndescription: Changed. Use when reviewing pull requests.\n---\nNew.\n');
+    assert.equal(s.run('regenerate', '--yes').code, 0);
+    assert.deepEqual(byName().alpha.words, ['polish', 'README text'], 'regenerate keeps words of a changed skill');
+    assert.equal(s.run('install', '--yes', '--tools', 'claude', '--ai', 'none').code, 0);
+    assert.deepEqual(byName().alpha.words, ['polish', 'README text'], 'install keeps words');
+
+    assert.equal(s.run('words', 'alpha', 'remove', 'polish').code, 0);
+    assert.deepEqual(byName().alpha.words, ['README text']);
+    assert.equal(s.run('words', 'alpha', 'remove', 'README text').code, 0);
+    assert.equal(byName().alpha.words, undefined, 'no empty list left behind');
+  } finally { s.cleanup(); }
+});
+
+test('words: bad input is refused; a word that fires on chat replies gives a warning', () => {
+  const s = setup();
+  try {
+    assert.equal(s.run('install', '--yes', '--tools', 'claude', '--ai', 'none').code, 0);
+    assert.match(s.run('words', 'nope', 'add', 'x').out, /no skill named "nope"/);
+    assert.notEqual(s.run('words', 'alpha', 'add').code, 0);
+    assert.notEqual(s.run('words', 'alpha', 'grow', 'x').code, 0);
+    assert.match(s.run('words', 'alpha', 'add', 'x'.repeat(61)).out, /60 characters/);
+    assert.match(s.run('words', 'alpha', 'add', ...Array.from({ length: 21 }, (_, i) => `w${i}`)).out, /at most 20/);
+    const w = s.run('words', 'alpha', 'add', 'fix');
+    assert.equal(w.code, 0, w.out);
+    assert.match(w.out, /also fire on ordinary replies such as "please fix this"/);
+  } finally { s.cleanup(); }
+});
+
 test('a failed AI scan call is reported and the static result is kept', () => {
   const s = setup();
   try {
