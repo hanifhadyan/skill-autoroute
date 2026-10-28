@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, chmodSync, rmSync, realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,4 +105,68 @@ test('symlinked skill folder is followed and reported by real path', () => {
     assert.equal(s.dir, realpathSync(join(d, 'beta')));
     assert.equal(s.tool, 'codex');
   } finally { cleanup(); rmSync(other, { recursive: true, force: true }); }
+});
+
+test('links escaping the skill folder are not read, hashed or walked; they are reported in outside', () => {
+  const { d, cleanup } = tmpCopy();
+  const out = mkdtempSync(join(tmpdir(), 'skill-autoroute-out-'));
+  try {
+    writeFileSync(join(out, 'secret.txt'), 's');
+    mkdirSync(join(out, 'dir'));
+    writeFileSync(join(out, 'dir', 'inner.txt'), 'i');
+    const base = discover(roots(d)).find((s) => s.name === 'alpha');
+    assert.deepEqual(base.outside, []);
+    symlinkSync(join(out, 'secret.txt'), join(d, 'alpha', 'notes'));
+    symlinkSync(join(out, 'dir'), join(d, 'alpha', 'scripts', 'x'));
+    const a = discover(roots(d)).find((s) => s.name === 'alpha');
+    assert.deepEqual(a.files, base.files);
+    assert.equal(a.hash, base.hash);
+    assert.deepEqual(a.outside, ['notes', 'scripts/x']);
+  } finally { cleanup(); rmSync(out, { recursive: true, force: true }); }
+});
+
+test('SKILL.md symlinked outside the skill folder is rejected', () => {
+  const { d, cleanup } = tmpCopy();
+  const out = mkdtempSync(join(tmpdir(), 'skill-autoroute-out-'));
+  try {
+    writeFileSync(join(out, 'SKILL.md'), '---\nname: evil\n---\n');
+    mkdirSync(join(d, 'evil'));
+    symlinkSync(join(out, 'SKILL.md'), join(d, 'evil', 'SKILL.md'));
+    assert.ok(!discover(roots(d)).some((s) => s.name === 'evil'));
+  } finally { cleanup(); rmSync(out, { recursive: true, force: true }); }
+});
+
+test('a FIFO in a skill does not hang and is not listed', () => {
+  const { d, cleanup } = tmpCopy();
+  try {
+    const r = spawnSync('mkfifo', [join(d, 'alpha', 'pipe')]);
+    if (r.status !== 0) return; // no mkfifo on this platform
+    const alpha = discover(roots(d)).find((s) => s.name === 'alpha');
+    assert.equal(alpha.files.length, 2);
+    assert.ok(!alpha.files.some((f) => f.endsWith('pipe')));
+  } finally { cleanup(); }
+});
+
+test('same real skill via two roots or a link is returned once, first entry wins', () => {
+  const { d, cleanup } = tmpCopy();
+  const other = mkdtempSync(join(tmpdir(), 'skill-autoroute-disc-'));
+  try {
+    symlinkSync(join(d, 'beta'), join(other, 'beta-link'));
+    const skills = discover([
+      { dir: d, tool: 'claude', source: 'first' },
+      { dir: other, tool: 'codex', source: 'second' },
+      { dir: d, tool: 'claude', source: 'third' },
+    ]);
+    assert.equal(skills.filter((s) => s.name === 'beta').length, 1);
+    assert.equal(skills.find((s) => s.name === 'beta').source, 'first');
+    assert.equal(skills.length, 3);
+  } finally { cleanup(); rmSync(other, { recursive: true, force: true }); }
+});
+
+test('parseFrontmatter: wrapped plain scalar, BOM, empty block', () => {
+  const w = parseFrontmatter('---\nname: w\ndescription: first part\n  second part\n  third\nallowed-tools: Read\n---\nB');
+  assert.equal(w.description, 'first part second part third');
+  assert.equal(w.allowedTools, 'Read');
+  assert.equal(parseFrontmatter('\uFEFF---\nname: bom\n---\nB').name, 'bom');
+  assert.deepEqual(parseFrontmatter('---\n---\nB'), { body: 'B' });
 });
