@@ -1,6 +1,6 @@
 // Per-prompt hook for Claude Code and Codex. Node built-ins only; any error means no output, exit 0.
 // argv[2] names the tool (claude or codex): only that tool's skills are hinted; no argument hints all.
-import { readFileSync, statSync, readdirSync, realpathSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, statSync, readdirSync, realpathSync, appendFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -176,7 +176,7 @@ const inProject = (s, here, fs) => !Array.isArray(s.projects) || s.projects.some
   return here.some((h) => h === root || h.startsWith(root + sep));
 });
 
-function pick(prompt, table, { tool, base, fs = FS } = {}) {
+function pick(prompt, table, { tool, base, skip, fs = FS } = {}) {
   const text = String(prompt).slice(0, MAX_PROMPT);
   const here = places(base, fs);
   const ok = (v) => typeof v === 'string' && v !== '';
@@ -187,14 +187,14 @@ function pick(prompt, table, { tool, base, fs = FS } = {}) {
     .filter(({ s, own }) => (own || fits(s.patterns, text)) && fs.mtime(s.path) !== null)
     .sort((a, b) => (b.own - a.own) || ((a.s.priority ?? 1e9) - (b.s.priority ?? 1e9)))
     .map(({ s }) => s)
-    .filter((s) => !seen.has(s.name) && seen.add(s.name))
+    .filter((s) => !seen.has(s.name) && seen.add(s.name) && !skip?.has(s.name))
     .slice(0, MAX_HINTS);
   if (!hits.length) return null;
   const safe = (v) => v.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
   let out = 'Skills that fit this work (read each SKILL.md before you start): ' + hits.map((s) => `${shownName(s.name)} (${safe(s.path)})`).join('; ') + '.';
   const n = staleCount(table, fs);
   if (n) out += `\n${n} skill${n === 1 ? '' : 's'} changed since the last generate. Run: npx skill-autoroute regenerate`;
-  return { out, count: hits.length };
+  return { out, count: hits.length, names: hits.map((s) => s.name) };
 }
 
 export const route = (prompt, table, opts) => pick(prompt, table, opts)?.out ?? null;
@@ -250,26 +250,70 @@ const userClaudeHook = (udir) => {
   } catch { return false; }
 };
 
+// Skills already named in a session, one name per line, so a resumed or repeated prompt does not hint (and the agent
+// does not re-read) them again. An id that is not a plain token gets no memory: it is never used as a file name.
+function sessionFile(udir, tool, sid) {
+  return typeof sid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(sid) ? join(udir, 'sessions', `${tool || 'any'}-${sid}`) : null;
+}
+const remembered = (file) => {
+  try { return new Set(readFileSync(file, 'utf8').split('\n').filter(Boolean)); } catch { return null; }
+};
+function remember(file, names) {
+  if (!file) return;
+  try {
+    const dir = dirname(file);
+    if (!existsSync(file)) {
+      mkdirSync(dir, { recursive: true });
+      // shortcut: prune old sessions only when a new one starts; fine for a few hundred sessions a week.
+      for (const f of readdirSync(dir)) if ((FS.mtime(join(dir, f)) ?? Infinity) < Date.now() - 7 * 864e5) unlinkSync(join(dir, f));
+    }
+    appendFileSync(file, names.map((n) => `${n}\n`).join(''));
+  } catch { /* a read-only sandbox only loses the memory */ }
+}
+
+const loadTable = (udir, base) => merge(load(join(udir, 'routes.json')), resolveProject(load(join(base, '.skill-autoroute', 'routes.json')), base));
+
+// `route.mjs [tool] suggest <session|-> <text...>`: the agent asks for skills in the middle of its work.
+function suggest(udir, args, i) {
+  const tool = i === 1 ? args[0] : undefined;
+  const base = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const table = loadTable(udir, base);
+  const hit = table && pick(args.slice(i + 2).join(' '), table, { tool, base });
+  process.stdout.write(`${hit ? hit.out : 'No skill fits.'}\n`);
+  if (hit) remember(sessionFile(udir, tool, args[i + 1]), hit.names);
+}
+
 function main(self) {
   if (process.env.SKILL_AUTOROUTE_DISABLE === '1') return;
   const udir = join(homedir(), '.config', 'skill-autoroute');
+  const args = process.argv.slice(2);
+  const at = args.indexOf('suggest');
+  if (at === 0 || at === 1) return suggest(udir, args, at);
   // The user Claude hook already merges the project table; the project copy beside it would hint twice.
   // Only a Claude user hook counts: a Codex-only user install must not silence the Claude project hook.
   if (self.endsWith(`${sep}.skill-autoroute${sep}route.mjs`) && userClaudeHook(udir)) return;
   try {
-    const { prompt } = JSON.parse(readFileSync(0, 'utf8'));
+    const { prompt, session_id: sid } = JSON.parse(readFileSync(0, 'utf8'));
     if (typeof prompt !== 'string') return;
     const base = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const table = merge(load(join(udir, 'routes.json')), resolveProject(load(join(base, '.skill-autoroute', 'routes.json')), base));
+    const table = loadTable(udir, base);
     if (!table) return;
-    const hit = pick(prompt, table, { tool: process.argv[2], base });
-    if (!hit) return;
-    const ctx = hit.out;
+    const tool = args[0];
+    const file = sessionFile(udir, tool, sid);
+    const known = file && remembered(file);
+    const hit = pick(prompt, table, { tool, base, skip: known ?? undefined });
+    // Told once per session: later prompts and resumed rounds already have this line in context.
+    const tell = file && !known
+      ? `To find skills for a new sub-task later in this session, run: node ${JSON.stringify(self)}${tool ? ` ${tool}` : ''} suggest ${sid} "<what you will do next>"`
+      : '';
+    if (!hit && !tell) return;
+    remember(file, hit ? hit.names : []);
+    const ctx = [hit?.out, tell].filter(Boolean).join('\n');
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ctx } }) + '\n');
     if (process.env.SKILL_AUTOROUTE_LOG === '1' || table.log === true) {
       try {
         mkdirSync(udir, { recursive: true });
-        appendFileSync(join(udir, 'usage.log'), `${new Date().toISOString()}\t${hit.count}\t${ctx.length}\n`);
+        appendFileSync(join(udir, 'usage.log'), `${new Date().toISOString()}\t${hit?.count ?? 0}\t${ctx.length}\n`);
       } catch { /* logging must never break a prompt */ }
     }
   } catch (e) {

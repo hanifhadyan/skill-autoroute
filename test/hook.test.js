@@ -231,9 +231,11 @@ function setup(userTable, projectTable) {
   const projSkill = (rel) => { mkdirSync(dirname(join(cwd, rel)), { recursive: true }); writeFileSync(join(cwd, rel), '# p\n'); for (const p of [join(cwd, rel), dirname(join(cwd, rel))]) utimesSync(p, OLD, OLD); };
   return { home, cwd, udir, cleanup, projSkill };
 }
-const input = (prompt) => ({ session_id: 'x', cwd: 'x', hook_event_name: 'UserPromptSubmit', prompt });
-const claudeInput = JSON.parse(readFileSync(new URL('./fixtures/claude-hook-input.json', import.meta.url), 'utf8'));
-const codexInput = JSON.parse(readFileSync(new URL('./fixtures/codex-hook-input.json', import.meta.url), 'utf8'));
+// No session_id: these tests check one prompt at a time, without the per-session memory (tested further down).
+const input = (prompt) => ({ cwd: 'x', hook_event_name: 'UserPromptSubmit', prompt });
+const fixtureNoSession = (name) => { const { session_id, ...rest } = JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')); return rest; };
+const claudeInput = fixtureNoSession('claude-hook-input.json');
+const codexInput = fixtureNoSession('codex-hook-input.json');
 const ctxOf = (r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
 
 test('hook prints the one-line JSON for a match (Claude and Codex fixtures)', () => {
@@ -465,4 +467,56 @@ test('projects: a scoped entry hints only inside its project or a git worktree o
     assert.match(at(other), /global/);
     assert.doesNotMatch(route('work the ticket', t), /run-ticket/, 'no base: scoped entries stay out');
   } finally { cleanup(); }
+});
+
+// ---- session memory and `suggest` ----
+const say = (sid, prompt) => ({ ...claudeInput, session_id: sid, prompt });
+const suggest = (s, args) => spawnSync('node', [join(dirname(new URL(import.meta.url).pathname), '..', 'hook', 'route.js'), ...args],
+  { env: { ...process.env, HOME: s.home }, cwd: s.cwd, encoding: 'utf8', timeout: 5000 });
+
+test('the first prompt of a session tells the agent how to run suggest, once; a later prompt does not', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [sk('hello-skill', [['hello']])] };
+  const s = setup(t);
+  try {
+    const first = runHook(say('s1', 'nothing fits'), { HOME: s.home }, s.cwd, ['claude']);
+    const ctx = ctxOf(first);
+    assert.match(ctx, /suggest s1 "/, ctx);
+    assert.ok(ctx.includes('route.js') && ctx.includes(' claude suggest '), ctx);
+    assert.equal(runHook(say('s1', 'still nothing'), { HOME: s.home }, s.cwd, ['claude']).stdout, '');
+  } finally { s.cleanup(); }
+});
+
+test('a skill already named in this session is not hinted again; a new one still is; another session starts fresh', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [sk('a-skill', [['alpha']], 1), sk('b-skill', [['beta']], 2)] };
+  const s = setup(t);
+  try {
+    assert.match(ctxOf(runHook(say('s1', 'alpha'), { HOME: s.home }, s.cwd, ['claude'])), /a-skill/);
+    assert.equal(runHook(say('s1', 'alpha again'), { HOME: s.home }, s.cwd, ['claude']).stdout, '');
+    const both = ctxOf(runHook(say('s1', 'alpha and beta'), { HOME: s.home }, s.cwd, ['claude']));
+    assert.ok(both.includes('b-skill') && !both.includes('a-skill'), both);
+    assert.match(ctxOf(runHook(say('s2', 'alpha'), { HOME: s.home }, s.cwd, ['claude'])), /a-skill/);
+  } finally { s.cleanup(); }
+});
+
+test('suggest prints the fitting skills as plain text and records them, so the next prompt skips them', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [sk('a-skill', [['alpha']])] };
+  const s = setup(t);
+  try {
+    const r = suggest(s, ['claude', 'suggest', 's1', 'now', 'the', 'alpha', 'part']);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /^Skills that fit this work .*a-skill \(.*SKILL\.md\)\.\n$/);
+    assert.match(suggest(s, ['claude', 'suggest', 's1', 'alpha']).stdout, /a-skill/, 'suggest repeats on request');
+    assert.ok(!(runHook(say('s1', 'alpha'), { HOME: s.home }, s.cwd, ['claude']).stdout).includes('a-skill'));
+    assert.equal(suggest(s, ['claude', 'suggest', 's1', 'zzz']).stdout, 'No skill fits.\n');
+    assert.match(suggest(s, ['suggest', '-', 'alpha']).stdout, /a-skill/, 'no tool, no session: still answers');
+  } finally { s.cleanup(); }
+});
+
+test('a session id with path characters is never used as a file name', () => {
+  const t = { version: 1, generatedAt: GEN, skills: [sk('a-skill', [['alpha']])] };
+  const s = setup(t);
+  try {
+    for (let i = 0; i < 2; i++) assert.match(ctxOf(runHook(say('../../evil', 'alpha'), { HOME: s.home }, s.cwd, ['claude'])), /a-skill/);
+    assert.ok(!existsSync(join(s.home, '.config', 'evil')) && !existsSync(join(s.udir, 'evil')));
+  } finally { s.cleanup(); }
 });

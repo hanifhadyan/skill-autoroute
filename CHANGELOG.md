@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.6.0] - 2026-10-29
+
+### Added
+
+- `route.mjs [tool] suggest <session-id> "<text>"`: an agent asks for skills in the middle of its work. The first
+  prompt of each session tells the agent how to run it.
+
+### Changed
+
+- The hook remembers which skills it named in a session and does not hint them again, so resumed rounds of an agent
+  loop do not re-read the same SKILL.md. Memory lives in `~/.config/skill-autoroute/sessions/` and is pruned after
+  7 days. A prompt without a session id behaves as before.
+
 ## [0.5.0] - 2026-10-28
 
 ### Added
@@ -99,6 +112,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.6.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.3.0...v0.4.0
