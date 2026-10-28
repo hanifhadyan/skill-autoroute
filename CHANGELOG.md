@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.4.1] - 2026-10-28
+
+### Changed
+
+- README: the hint quality table says the measured rules apply to 0.3.0 and later.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added
@@ -78,6 +84,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.4.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.0...v0.2.1

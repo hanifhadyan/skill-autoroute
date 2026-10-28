@@ -8,6 +8,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Tests point HOME at temp dirs; a CODEX_HOME from the real shell would lead back to the real Codex folder.
 delete process.env.CODEX_HOME;
+// Same for CLAUDE_PROJECT_DIR, set when the tests run inside a Claude Code hook: the hook would read the real project.
+delete process.env.CLAUDE_PROJECT_DIR;
 
 export function fakeHome() {
   const home = mkdtempSync(join(tmpdir(), 'skill-autoroute-'));

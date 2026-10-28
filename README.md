@@ -192,14 +192,14 @@ a known answer, 5 of which must get no hint.
 | ------------------------------------------ | --------- | --------------- | -------------------- | ---------------------- | ----------- |
 | 0.2.0 (haiku)                              | 35.5%     | 50.0%           | 22 / 40              | 12.9                   | 10/13       |
 | Broad single-word rules (haiku)            | 21.0%     | 59.1%           | 26 / 98              | 24.1                   | 9/13        |
-| **0.3.0: task word plus object word (sonnet)** | **59.1%** | **59.1%**   | **26 / 18**          | **10.8**               | **12/13**   |
+| **0.3.0 and later: task word plus object word (sonnet)** | **59.1%** | **59.1%**   | **26 / 18**          | **10.8**               | **12/13**   |
 
 
 Relative recall is the share of all useful hints that any version found. Broader rules doubled the hints but most of the
 new ones were wrong. Guessing the kind of work from the prompt (question, change, risky) to gate or add hints was also
 tested and made hints worse (F1 63.2 down to 55.7), so it is not used.
 
-Examples with 0.3.0:
+Examples with 0.3.0 and later (0.4.0 added [your own trigger words](#your-own-trigger-words); the rules are the same):
 
 | Prompt                                | Hint                    |
 | ------------------------------------- | ----------------------- |
