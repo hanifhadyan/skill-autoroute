@@ -27,22 +27,27 @@ export class Recorder {
 }
 
 const pad = (v, n) => String(v).padEnd(n);
+// 515450 -> "515,450": long token counts are read at a glance.
+export const num = (n) => (typeof n === 'number' ? n.toLocaleString('en-US') : String(n));
 
 // Input and cache-read are separate columns on purpose: Codex may or may not count cached tokens inside input.
+// Each real number has its estimate in the column beside it; numbers are right-aligned so digits line up.
 export function formatReport(totals = {}, estimates = {}) {
-  const est = (n) => (n == null ? 'est n/a' : `est ${n}`);
-  const withEst = (v, n) => (n == null ? v : `${v} (est ${n})`); // older estimates have no cache-read part
-  const rows = Object.entries(totals).map(([step, t]) => [
-    step, t.model ?? '-', t.calls, `${t.input} (${est(estimates[step]?.input)})`, withEst(t.cacheRead, estimates[step]?.cacheRead), `${t.output} (${est(estimates[step]?.output)})`,
-  ]);
-  const sum = (f) => Object.values(totals).reduce((a, t) => a + f(t), 0);
-  const estSum = (k) => (Object.keys(totals).every((s) => estimates[s]?.[k] != null) ? Object.keys(totals).reduce((a, s) => a + estimates[s][k], 0) : null);
-  rows.push(['total', '', sum((t) => t.calls), `${sum((t) => t.input)} (${est(estSum('input'))})`, withEst(sum((t) => t.cacheRead), estSum('cacheRead')), `${sum((t) => t.output)} (${est(estSum('output'))})`]);
-  const head = ['step', 'model', 'calls', 'input', 'cache-read', 'output'];
-  const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
-  const line = (r) => r.map((c, i) => pad(c, w[i])).join('  ').trimEnd();
+  const steps = Object.keys(totals);
+  const est = (s, k) => (estimates[s]?.[k] == null ? 'n/a' : num(estimates[s][k]));
+  const sum = (f) => num(steps.reduce((a, s) => a + f(totals[s]), 0));
+  const estSum = (k) => (steps.every((s) => estimates[s]?.[k] != null) ? num(steps.reduce((a, s) => a + estimates[s][k], 0)) : 'n/a');
+  const rows = steps.map((s) => {
+    const t = totals[s];
+    return [s, t.model ?? '-', num(t.calls), num(t.input), est(s, 'input'), num(t.cacheRead), est(s, 'cacheRead'), num(t.output), est(s, 'output')];
+  });
+  const total = ['total', '', sum((t) => t.calls), sum((t) => t.input), estSum('input'), sum((t) => t.cacheRead), estSum('cacheRead'), sum((t) => t.output), estSum('output')];
+  const head = ['step', 'model', 'calls', 'input', 'est input', 'cache-read', 'est cache-read', 'output', 'est output'];
+  const w = head.map((h, i) => Math.max(...[head, ...rows, total].map((r) => String(r[i]).length)));
+  const line = (r) => r.map((c, i) => (i < 2 ? pad(c, w[i]) : String(c).padStart(w[i]))).join('  ').trimEnd();
+  const rule = w.map((n) => '─'.repeat(n)).join('  ');
   return [
-    line(head), ...rows.map(line),
+    line(head), rule, ...rows.map(line), rule, line(total), '',
     'est = estimate (characters / 4 plus overhead per call). Real numbers come from the CLI usage output.',
     'Input and cache-read are separate columns and are not summed. The router adds tokens; it does not reduce them.',
   ].join('\n');
@@ -71,7 +76,7 @@ export function hookReport(table, logLines) {
   const w = Math.max(0, ...skills.map((s) => s.name.length));
   for (const s of skills) {
     const c = size(s).length;
-    out.push(`  ${pad(s.name, w)}  ${c} chars  ~${tokens(c)} tokens (estimate)`);
+    out.push(`  ${pad(s.name, w)}  ${num(c)} chars  ~${num(tokens(c))} tokens (estimate)`);
   }
   if (!skills.length) out.push('  no enabled skills in the table');
   const fires = parseLog(logLines);
@@ -83,9 +88,9 @@ export function hookReport(table, logLines) {
   const total = fires.reduce((a, f) => a + f.chars, 0);
   const round1 = (n) => Math.round(n * 10) / 10;
   out.push(
-    `Usage log: ${fires.length} fires over ${days} active days, ${round1(fires.length / days)} fires per active day`,
-    `  average added: ${Math.round(total / fires.length)} chars per fire (~${tokens(total / fires.length)} tokens, estimate)`,
-    `  average added: ${Math.round(total / days)} chars per active day (~${tokens(total / days)} tokens, estimate)`,
+    `Usage log: ${num(fires.length)} fires over ${num(days)} active days, ${round1(fires.length / days)} fires per active day`,
+    `  average added: ${num(Math.round(total / fires.length))} chars per fire (~${num(tokens(total / fires.length))} tokens, estimate)`,
+    `  average added: ${num(Math.round(total / days))} chars per active day (~${num(tokens(total / days))} tokens, estimate)`,
   );
   return out.join('\n');
 }

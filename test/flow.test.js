@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimates, buildRows, runDedupe, plainUi } from '../src/flow.js';
+import { estimates, buildRows, runDedupe, runScans, plainUi, groupOf } from '../src/flow.js';
 import { Recorder } from '../src/usage.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const ok = { verdict: 'ok', partial: false, findings: [] };
 const sk = (name, tool = 'claude', source = 'user', i = name) => ({ name, tool, source, description: 'Reviews pull requests carefully for bugs', skillPath: `/nope/${i}/SKILL.md`, files: [] });
@@ -35,4 +38,24 @@ test('runDedupe: a group over 8 compares the first 8; the rest stay checked and 
   const rows = buildRows(group, new Map(group.map((s) => [s.skillPath, ok])), out);
   assert.equal(rows[9].enabled, true);
   assert.match(rows[9].text, /duplicate group too large to compare/);
+});
+
+test('groupOf: plugin skills group by plugin, others by tool and folder kind', () => {
+  assert.equal(groupOf(sk('a', 'claude', 'plugin:caveman@caveman')), 'plugin caveman@caveman');
+  assert.equal(groupOf(sk('b', 'codex', 'user')), 'codex user skills');
+});
+
+test('runScans: the progress bar names each skill in order and closes with a count', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sa-flow-'));
+  writeFileSync(join(dir, 'SKILL.md'), '---\nname: one\n---\nbody\n');
+  const real = { skillPath: join(dir, 'SKILL.md'), dir, files: [join(dir, 'SKILL.md')], outside: [], skipped: [] };
+  const skills = [{ ...sk('one', 'claude', 'user', 1), ...real }, { ...sk('two', 'codex', 'user', 2), outside: [], skipped: [] }];
+  const ai = { headless: async () => ({ json: { verdict: 'ok', findings: [] }, usage: {} }) };
+  const ctx = { aiName: 'claude', ai, overrides: {}, rec: new Recorder(), est: {}, used: {}, overhead: 0, cacheOverhead: 0 };
+  const seen = [];
+  const ui = { ...plainUi(() => {}), progress: (max) => { seen.push(`max ${max}`); return { next: (m) => seen.push(m), done: (m) => seen.push(m) }; } };
+  await runScans(skills, ctx, ui);
+  rmSync(dir, { recursive: true });
+  // "two" has no files on disk, so its call fails before it is sent
+  assert.deepEqual(seen, ['max 2', 'AI deep scan 1/2: one', 'AI deep scan 2/2: two', 'AI deep scan done: 1 of 2 skills scanned']);
 });

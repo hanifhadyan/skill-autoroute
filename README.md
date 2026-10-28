@@ -39,25 +39,11 @@ No match means no output and **0 extra tokens**. No AI runs at prompt time. The 
 
 ### 1 · Setup (once)
 
-```mermaid
-flowchart LR
-    A["🔍 Find skills<br/><sub>Claude Code + Codex</sub>"] --> B["🛡️ Security scan<br/><sub>fixed rules + optional AI</sub>"]
-    B --> C["👯 Find duplicates<br/><sub>AI picks the better one</sub>"]
-    C --> D["☑️ You choose<br/><sub>check / uncheck</sub>"]
-    D --> E["⚡ Make triggers<br/><sub>with your own CLI login</sub>"]
-    E --> F["🪝 Install hook<br/><sub>+ trigger table</sub>"]
-```
+![Setup: find skills, security scan, find duplicates, you choose, make triggers, install hook](https://raw.githubusercontent.com/hanifhadyan/skill-autoroute/main/docs/img/flow-setup.png)
 
 ### 2 · Every prompt (automatic)
 
-```mermaid
-flowchart LR
-    P["You type a prompt"] --> H{"Hook checks<br/>trigger table"}
-    H -- "match" --> Y["Adds one hint line<br/><sub>≤ 3 skills, ~60 tokens each</sub>"]
-    H -- "no match" --> N["Adds nothing<br/><sub>0 tokens</sub>"]
-    Y --> AG["Agent reads the skill<br/>and does the work"]
-    N --> AG
-```
+![Every prompt: the hook checks the trigger table; a match adds one hint line, no match adds nothing](https://raw.githubusercontent.com/hanifhadyan/skill-autoroute/main/docs/img/flow-prompt.png)
 
 ---
 
@@ -236,18 +222,7 @@ When your skills change, the hint line tells you so. Run `regenerate`.
 
 ## User or project install
 
-```mermaid
-flowchart TB
-    subgraph U["👤 User level (default)"]
-      U1["~/.config/skill-autoroute/<br/>route.mjs + routes.json"]
-    end
-    subgraph P["📁 Project level (--project)"]
-      P1[".skill-autoroute/<br/>route.mjs + routes.json<br/><sub>commit it for your team</sub>"]
-    end
-    U1 --> M{"Hook merges both<br/><sub>project wins on same name</sub>"}
-    P1 --> M
-    M --> R["Hints"]
-```
+![User-level and project-level tables; the hook merges both and the project wins on the same name](https://raw.githubusercontent.com/hanifhadyan/skill-autoroute/main/docs/img/flow-scopes.png)
 
 - **User level** works in every folder.
 - **Project level** goes into the repository, so teammates get it on clone. It adds a hook to `.claude/settings.json`.

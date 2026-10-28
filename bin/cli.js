@@ -40,7 +40,22 @@ const clackUi = {
   log: (m) => p.log.message(m),
   confirm: async (message, initialValue = true) => unwrap(await p.confirm({ message, initialValue })),
   select: async (message, options, initialValue) => unwrap(await p.select({ message, options, initialValue })),
-  multiselect: async (message, options, initialValues) => unwrap(await p.multiselect({ message, options, initialValues, required: false })),
+  multiselect: async (message, options, initialValues) => {
+    if (!options.some((o) => o.group)) return unwrap(await p.multiselect({ message, options, initialValues, required: false }));
+    const groups = {};
+    for (const { group, ...o } of options) (groups[group] ??= []).push(o);
+    return unwrap(await p.groupMultiselect({ message, options: groups, initialValues, required: false }));
+  },
+  progress: (max) => {
+    const bar = p.progress({ max, indicator: 'timer' });
+    // A label wider than the terminal wraps, and the bar then cannot redraw its own line.
+    const fit = (m = '') => { const w = Math.max(20, (process.stdout.columns || 80) - 60); return m.length > w ? `${m.slice(0, w - 1)}…` : m; };
+    let started = false;
+    return {
+      next: (msg) => { if (started) bar.advance(1, fit(msg)); else { bar.start(fit(msg)); started = true; } },
+      done: (msg) => { if (!started) bar.start(); bar.advance(1); bar.stop(fit(msg)); },
+    };
+  },
   text: async (message) => unwrap(await p.text({ message })) ?? '',
 };
 
