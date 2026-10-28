@@ -120,17 +120,18 @@ function fits(rules, text) {
   });
 }
 
-// Stale: a table skill whose SKILL.md is gone or newer than the table, plus a skill folder in a root that the table
+// Stale: a table skill whose SKILL.md is gone or newer than the table (project entries: gone only, since a clone or
+// pull resets file times past the committed generatedAt), plus a skill folder in a root that the table
 // does not know (table paths are real paths; root entries are often symlinks, so they are resolved first).
 export function staleCount(table, fs = FS) {
   const gen = Date.parse(table.generatedAt);
-  const paths = table.skills.filter((s) => s && typeof s.path === 'string').map((s) => s.path);
-  const known = new Set(paths.map(dirname));
+  const entries = table.skills.filter((s) => s && typeof s.path === 'string');
+  const known = new Set(entries.map((s) => dirname(s.path)));
   let n = 0;
-  for (const p of paths) {
+  for (const { path: p, project } of entries) {
     const m = fs.mtime(p);
     if (m === null) n++;
-    else if (!Number.isNaN(gen) && (m > gen || (fs.mtime(dirname(p)) ?? 0) > gen)) n++;
+    else if (!project && !Number.isNaN(gen) && (m > gen || (fs.mtime(dirname(p)) ?? 0) > gen)) n++;
   }
   for (const r of Array.isArray(table.roots) ? table.roots : []) {
     if (typeof r !== 'string') continue;
@@ -150,7 +151,7 @@ function pick(prompt, table, { tool, fs = FS } = {}) {
   const ok = (v) => typeof v === 'string' && v !== '';
   const seen = new Set();
   const hits = table.skills
-    .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && /[\\/]SKILL\.md$/.test(s.path) && (!tool || s.tool === tool))
+    .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && /[\\/]SKILL\.md$/.test(s.path) && (!tool || (Array.isArray(s.tools) ? s.tools : [s.tool]).includes(tool)))
     .filter((s) => fits(s.patterns, text) && fs.mtime(s.path) !== null)
     .sort((a, b) => (a.priority ?? 1e9) - (b.priority ?? 1e9))
     .filter((s) => !seen.has(s.name) && seen.add(s.name))
@@ -189,7 +190,7 @@ export function resolveProject(table, base) {
   return {
     ...t,
     roots: t.roots.map(abs).filter(under),
-    skills: t.skills.filter((s) => typeof s.path === 'string' && under(abs(s.path))).map((s) => ({ ...s, path: abs(s.path) })),
+    skills: t.skills.filter((s) => typeof s.path === 'string' && under(abs(s.path))).map((s) => ({ ...s, path: abs(s.path), project: true })),
   };
 }
 
@@ -208,11 +209,20 @@ export function merge(user, project) {
   };
 }
 
+const userClaudeHook = (udir) => {
+  try {
+    const copy = join(udir, 'route.mjs');
+    const text = readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8');
+    return existsSync(copy) && (text.includes(copy) || text.includes(JSON.stringify(copy).slice(1, -1)));
+  } catch { return false; }
+};
+
 function main(self) {
   if (process.env.SKILL_AUTOROUTE_DISABLE === '1') return;
   const udir = join(homedir(), '.config', 'skill-autoroute');
-  // The user hook already merges the project table; the project copy beside it would hint twice.
-  if (self.endsWith(`${sep}.skill-autoroute${sep}route.mjs`) && existsSync(join(udir, 'route.mjs'))) return;
+  // The user Claude hook already merges the project table; the project copy beside it would hint twice.
+  // Only a Claude user hook counts: a Codex-only user install must not silence the Claude project hook.
+  if (self.endsWith(`${sep}.skill-autoroute${sep}route.mjs`) && userClaudeHook(udir)) return;
   try {
     const { prompt } = JSON.parse(readFileSync(0, 'utf8'));
     if (typeof prompt !== 'string') return;

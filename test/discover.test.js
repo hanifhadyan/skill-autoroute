@@ -163,6 +163,8 @@ test('same real skill via two roots or a link is returned once, first entry wins
     ]);
     assert.equal(skills.filter((s) => s.name === 'beta').length, 1);
     assert.equal(skills.find((s) => s.name === 'beta').source, 'first');
+    assert.deepEqual(skills.find((s) => s.name === 'beta').tools, ['claude', 'codex'], 'a shared folder lists both tools');
+    assert.deepEqual(skills.find((s) => s.name !== 'beta').tools, ['claude']);
     assert.equal(skills.length, 3);
   } finally { cleanup(); rmSync(other, { recursive: true, force: true }); }
 });

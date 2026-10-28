@@ -65,7 +65,7 @@ function walk(root, realDir, rel, seen, found, outside, skipped) {
 
 export function discover(dirs) {
   const skills = [];
-  const done = new Set();
+  const done = new Map(); // real dir -> skill, so a folder shared by two tools lists both
   for (const { dir, tool, source } of dirs) {
     let names;
     try { names = readdirSync(dir).sort(); } catch { continue; }
@@ -75,7 +75,11 @@ export function discover(dirs) {
         real = realpathSync(join(dir, folder));
         if (!statSync(real).isDirectory()) continue;
       } catch { continue; }
-      if (done.has(real)) continue;
+      if (done.has(real)) {
+        const prev = done.get(real);
+        if (prev && !prev.tools.includes(tool)) prev.tools.push(tool);
+        continue;
+      }
       const skillPath = join(real, 'SKILL.md');
       let text;
       try {
@@ -83,7 +87,7 @@ export function discover(dirs) {
         if (!inside(real, sr) || !statSync(sr).isFile()) continue;
         text = readFileSync(sr, 'utf8');
       } catch { continue; }
-      done.add(real);
+      done.set(real, null);
       const found = [];
       const outside = [];
       const skipped = [];
@@ -92,15 +96,17 @@ export function discover(dirs) {
       const h = createHash('sha256');
       for (const f of found) h.update(`${f.rel}\0${f.hash}\n`);
       const fm = parseFrontmatter(text);
-      skills.push({
+      const skill = {
         name: fm.name || folder,
         description: fm.description || '',
-        tool, source, dir: real, skillPath,
+        tool, tools: [tool], source, dir: real, skillPath,
         hash: `sha256:${h.digest('hex')}`,
         files: found.map((f) => f.real),
         outside: outside.sort(),
         skipped: skipped.sort(),
-      });
+      };
+      done.set(real, skill);
+      skills.push(skill);
     }
   }
   return skills;

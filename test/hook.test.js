@@ -73,6 +73,8 @@ test('tool filter: only entries of the named tool; no tool means all', () => {
   const t = { generatedAt: GEN, skills: [sk('c', [['draft']], 1), sk('x', [['draft']], 2, { tool: 'codex' })] };
   assert.ok(route('draft', t, { tool: 'claude' }).includes('c (') && !route('draft', t, { tool: 'claude' }).includes('x ('));
   assert.ok(route('draft', t, { tool: 'codex' }).includes('x (') && !route('draft', t, { tool: 'codex' }).includes('c ('));
+  const shared = { generatedAt: GEN, skills: [sk('both', [['draft']], 1, { tools: ['claude', 'codex'] })] };
+  assert.ok(route('draft', shared, { tool: 'codex' }).includes('both ('), 'a skill shared by both tools hints in Codex');
   assert.ok(route('draft', t).includes('c (') && route('draft', t).includes('x ('));
 });
 
@@ -152,6 +154,18 @@ test('stale: a deleted SKILL.md is not hinted and counts as stale; an edited one
   } finally { s.cleanup(); }
 });
 
+test('stale: an edited project entry (fresh clone or pull) does not count; a deleted one does', () => {
+  const s = tree();
+  try {
+    s.t.skills[0].project = true;
+    const later = new Date(Date.parse(GEN) + 60000);
+    utimesSync(s.a, later, later);
+    assert.equal(staleCount(s.t), 0);
+    rmSync(s.a);
+    assert.equal(staleCount(s.t), 1);
+  } finally { s.cleanup(); }
+});
+
 test('resolveProject: relative paths resolve under the base; paths leaving it are dropped', () => {
   const { home, cleanup } = fakeHome();
   try {
@@ -159,6 +173,7 @@ test('resolveProject: relative paths resolve under the base; paths leaving it ar
     const t = resolveProject({ generatedAt: GEN, roots: ['.claude/skills', '../x'], skills: [sk('in', [['a']], 1, { path: '.claude/skills/in/SKILL.md' }), sk('up', [['a']], 1, { path: '../../etc/SKILL.md' }), sk('abs', [['a']], 1, { path: '/etc/SKILL.md' })] }, base);
     assert.deepEqual(t.roots, [join(base, '.claude/skills')]);
     assert.deepEqual(t.skills.map((s) => s.path), [join(base, '.claude/skills/in/SKILL.md')]);
+    assert.equal(t.skills[0].project, true);
     assert.equal(resolveProject(null, base), null);
   } finally { cleanup(); }
 });
@@ -284,7 +299,7 @@ test('untrusted project table: (a+)+$ skipped quickly, ~/.ssh path skipped, name
   } finally { s.cleanup(); }
 });
 
-test('the project hook copy prints nothing when the user hook copy exists', () => {
+test('the project hook copy prints nothing only when the user Claude hook is installed', () => {
   const t = { version: 1, generatedAt: new Date().toISOString(), skills: [sk('hello-skill', [['hello']])] };
   const s = setup(t);
   try {
@@ -294,6 +309,9 @@ test('the project hook copy prints nothing when the user hook copy exists', () =
     const run = () => spawnSync('node', [copy, 'claude'], { input: JSON.stringify(claudeInput), env: { ...process.env, HOME: s.home }, cwd: s.cwd, encoding: 'utf8' });
     assert.match(run().stdout, /hello-skill/, 'no user copy: the project copy hints');
     writeFileSync(join(s.udir, 'route.mjs'), '');
+    assert.match(run().stdout, /hello-skill/, 'user copy for Codex only: the project copy still hints');
+    mkdirSync(join(s.home, '.claude'), { recursive: true });
+    writeFileSync(join(s.home, '.claude', 'settings.json'), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: `"node" "${join(s.udir, 'route.mjs')}" claude` }] }] } }));
     const r = run();
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');

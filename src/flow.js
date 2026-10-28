@@ -163,7 +163,7 @@ function tableFindings(scope, skill, findings) {
 const entry = (r, gen, scope) => {
   const g = r.enabled ? gen.bySkill.get(r.skill.name) : null;
   return {
-    name: r.skill.name, tool: r.skill.tool, path: keyOf(scope)(r.skill.skillPath), hash: r.skill.hash, enabled: r.enabled,
+    name: r.skill.name, tool: r.skill.tool, tools: r.skill.tools ?? [r.skill.tool], path: keyOf(scope)(r.skill.skillPath), hash: r.skill.hash, enabled: r.enabled,
     priority: g?.priority ?? 50, patterns: g?.rules ?? [],
     scan: { verdict: r.scan.verdict, partial: r.scan.partial, findings: tableFindings(scope, r.skill, r.scan.findings) }, duplicateOf: r.dup?.of ?? null,
   };

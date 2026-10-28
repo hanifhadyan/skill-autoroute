@@ -83,13 +83,14 @@ User level is the default. The hook copy is `~/.config/skill-autoroute/route.mjs
 root, so it still works after a clone or a move; the hook resolves them against `CLAUDE_PROJECT_DIR` (or the current
 folder) and skips any entry that points outside the project. A project skill folder that is a symlink to a place outside
 the project is skipped for the same reason. The hook merges the user table and the project table; project entries win
-for the same skill name. When the user hook copy exists, the project hook copy prints nothing, because the user hook
-already reads the project table.
+for the same skill name. When the user Claude hook is installed (named in `~/.claude/settings.json`), the project hook
+copy prints nothing, because the user hook already reads the project table. A Codex-only user install does not silence it.
 
 The hook command passes the tool name, for example `".../node" "~/.config/skill-autoroute/route.mjs" claude`, so each
 tool gets hints only for its own skills. The user hook runs the Node that ran the install, by absolute path. The project
 hook names `node` on your `PATH`, because the project settings are shared. A skill folder that both tools load (the same
-real folder in `~/.claude/skills` and `~/.agents/skills`) is listed once, under Claude, so Codex gets no hints for it.
+real folder in `~/.claude/skills` and `~/.agents/skills`) is listed once, under Claude, and the table entry names both
+tools, so both get hints for it.
 Installing again updates an older hook entry in place.
 
 Codex has no project-level hook here. The user-level Codex hook reads the project table of the folder you run Codex in.
@@ -202,7 +203,8 @@ estimates as rough.
   `skill-autoroute tokens` prints the size for each enabled skill.
 - If skills changed since the table was generated, the hint line is followed by one more line with the count ("1 skill
   changed" or "N skills changed") and `npx skill-autoroute regenerate`. A skill counts as changed when its `SKILL.md` is
-  newer than the table or gone (a gone skill is never hinted), or when a skill folder (one with a `SKILL.md`) appears in
+  newer than the table or gone (a gone skill is never hinted; for a project table only gone counts, because a clone or
+  pull gives files new times), or when a skill folder (one with a `SKILL.md`) appears in
   a skills folder and the table does not know it. A plain folder without `SKILL.md` does not count; a symlink to a skill
   the table knows does not count. That line appears only together with hints.
 - `install --log` makes the hook append a line to `~/.config/skill-autoroute/usage.log` for each fire: time, number of
