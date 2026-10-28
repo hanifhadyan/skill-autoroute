@@ -79,8 +79,18 @@ User level is the default. The hook copy is `~/.config/skill-autoroute/route.mjs
 `~/.config/skill-autoroute/routes.json`.
 
 `--project` installs for the current repository: `.skill-autoroute/route.mjs` and `.skill-autoroute/routes.json`
-(committable), and a hook entry in `.claude/settings.json`. The hook merges the user table and the project table;
-project entries win for the same skill name.
+(committable), and a hook entry in `.claude/settings.json`. The project table stores skill paths relative to the project
+root, so it still works after a clone or a move; the hook resolves them against `CLAUDE_PROJECT_DIR` (or the current
+folder) and skips any entry that points outside the project. A project skill folder that is a symlink to a place outside
+the project is skipped for the same reason. The hook merges the user table and the project table; project entries win
+for the same skill name. When the user hook copy exists, the project hook copy prints nothing, because the user hook
+already reads the project table.
+
+The hook command passes the tool name, for example `".../node" "~/.config/skill-autoroute/route.mjs" claude`, so each
+tool gets hints only for its own skills. The user hook runs the Node that ran the install, by absolute path. The project
+hook names `node` on your `PATH`, because the project settings are shared. A skill folder that both tools load (the same
+real folder in `~/.claude/skills` and `~/.agents/skills`) is listed once, under Claude, so Codex gets no hints for it.
+Installing again updates an older hook entry in place.
 
 Codex has no project-level hook here. The user-level Codex hook reads the project table of the folder you run Codex in.
 Install at user level first so that hook exists.
@@ -129,15 +139,20 @@ reason.
 
 A high finding unchecks the skill. A medium finding keeps it checked with a warning.
 
-An optional AI deep scan sends the skill text to your AI CLI with no tools and a fixed answer format. It can only raise
-a result, never clear a static high finding.
+An optional AI deep scan sends the skill text to your AI CLI and asks for a fixed answer format. Claude runs with no
+tools. Codex runs with its shell features turned off by flag (`--disable shell_tool --disable unified_exec`) and the
+read-only sandbox as a backstop; that the flags take effect was checked in `codex features list`, not in a real run. The
+AI scan can only raise a result, never clear a static high finding. In a project table, an AI finding is stored as "AI
+flagged this (details in the install output)": the AI's own words appear only in the install output, never in the
+committed file.
 
 Read these limits:
 
 - "no issues found" is not a safety guarantee. It means these rules found nothing. A skill can still be harmful. Read
   skills you do not trust before you install them.
-- A scan can be partial. If a file cannot be read, a file is over 1 MB, a link points outside the skill folder, or the
-  text is cut at about 60 KB for the AI scan, the label says "partial scan".
+- A scan can be partial. If a file cannot be read, a file is over 1 MB, a link points outside the skill folder, the
+  skill has a `node_modules` or `.git` folder (never read), or the text is cut for the AI scan (at about 60,000
+  characters or 100 KB), the label says "partial scan".
 - The scan is text matching plus an AI read. It does not run anything. A determined author can word things to get past
   it.
 - A skill that quotes attack phrases as examples (for instance a security skill that lists "ignore previous
@@ -148,7 +163,9 @@ Read these limits:
 - Enabled skills get hints that tell the agent to read the skill file. Enable only skills you trust.
 
 The AI steps send skill text to the provider behind the CLI you chose (the triggers step sends names and descriptions;
-the deep scan sends the skill files, up to about 60 KB per skill; the duplicate step sends up to about 8 KB per skill).
+the deep scan sends the skill files, up to about 60 KB per skill; the duplicate step sends up to about 8 KB per skill
+and compares at most 8 skills in one call; the rest of a larger group is marked "duplicate group too large to compare"
+and stays as it was).
 Skill text is untrusted: it is wrapped in a delimiter with a random nonce and labelled as data in the prompt.
 
 ## Token usage
@@ -163,8 +180,8 @@ usage from the CLI next to the estimate: one row per step with model, calls, inp
 same data is saved in `install-report.json` next to `routes.json`. Input and cache-read are separate columns and are not
 summed.
 
-To keep calls small, each call runs in an empty temporary folder, with no tools, no session saved, and with the
-context-cutting flags that still keep the login working. Measured overhead for one call that only answers
+To keep calls small, each call runs in an empty temporary folder, with no tools (Codex: shell features off, read-only
+sandbox), no session saved, and with the context-cutting flags that still keep the login working. Measured overhead for one call that only answers
 `{"ok":true}`, on 2026-10-28 with Claude Code 2.1.312 and codex-cli 0.164.0 (one setup; yours will differ):
 
 | CLI | Input tokens per call |
@@ -183,11 +200,14 @@ estimates as rough.
 - A prompt that matches no rule gets no output: 0 tokens.
 - A matching prompt gets one line naming at most 3 skills, about 50 to 70 tokens per skill (estimate: characters / 4).
   `skill-autoroute tokens` prints the size for each enabled skill.
-- If any skill folder changed since the table was generated, the hint line is followed by one more line that says so and
-  names `npx skill-autoroute regenerate`. That line appears only together with hints.
+- If skills changed since the table was generated, the hint line is followed by one more line with the count ("1 skill
+  changed" or "N skills changed") and `npx skill-autoroute regenerate`. A skill counts as changed when its `SKILL.md` is
+  newer than the table or gone (a gone skill is never hinted), or when a skill folder (one with a `SKILL.md`) appears in
+  a skills folder and the table does not know it. A plain folder without `SKILL.md` does not count; a symlink to a skill
+  the table knows does not count. That line appears only together with hints.
 - `install --log` makes the hook append a line to `~/.config/skill-autoroute/usage.log` for each fire: time, number of
-  hints, characters added. It counts only. It never writes prompt text. `tokens` then reports fires per day and the
-  average added per fire and per day.
+  hints, characters added. It counts only. It never writes prompt text. `tokens` then reports fires per active day (a day with
+  at least one fire) and the average added per fire and per active day.
 
 ### bench
 
@@ -210,8 +230,8 @@ Each AI step uses the smallest model that does the job. The top model is never t
 
 Claude uses the aliases `haiku` and `sonnet`, so no model version is pinned. Codex tiers are lists of model names kept in
 `src/tools/codex-models.js`: small is `gpt-6-luna`, `gpt-5.6-luna`; mid is `gpt-6.1-sol`, `gpt-6-sol`. The adapter takes
-the first name that your `~/.codex/models_cache.json` lists. If none is listed, it uses the model from your own Codex
-config and says so. Codex calls always pass the step's effort level, so a high effort in your own config does not apply
+the first name that your `~/.codex/models_cache.json` lists (Codex files are read from `CODEX_HOME` when it is set). If none is listed, it uses the top-level `model` from your own Codex
+config (not one inside a `[profile]` section) and says so. Codex calls always pass the step's effort level, so a high effort in your own config does not apply
 to install calls.
 
 Override one step with `--model step=model`, where step is `probe`, `triggers`, `dedupe` or `scan`. It can be repeated:
@@ -222,8 +242,10 @@ npx skill-autoroute install --model triggers=sonnet --model scan=haiku
 
 The summary prints the model each step used.
 
-Headless calls that read skill content run with no tools (`claude -p --tools ""`) or in the read-only sandbox
-(`codex exec`).
+Headless calls that read skill content run with no tools (`claude -p --tools ""`), or for Codex with the shell
+features turned off by flag and the read-only sandbox as a backstop (`codex exec -s read-only --disable shell_tool
+--disable unified_exec`). The Codex flags were checked in `codex features list` on codex-cli 0.164.0, not in a real
+run.
 
 ## Triggers
 
@@ -244,8 +266,11 @@ confirmed.
 ## The hook
 
 `hook/route.js` imports Node built-ins only. On any error it prints nothing and exits 0, so an error never blocks a
-prompt. One known limit: patterns are validated at install and regenerate time, not when the hook runs, so a
-catastrophic regex that you add to a table by hand could make the hook slow. Set `SKILL_AUTOROUTE_DEBUG=1` to see
+prompt. Patterns are validated and timed at install and regenerate time. A project table can arrive with a clone, so
+the hook re-checks every table when it runs: it skips a pattern with nested quantifiers or one over 300 characters, an
+entry whose path does not end in `SKILL.md`, and a project entry outside the project; it shortens skill names to 100
+characters and replaces unusual characters with `?`. The hook re-checks patterns from project tables for nested
+quantifiers; it cannot time them. The prompt is cut at 20,000 characters as a further limit. Set `SKILL_AUTOROUTE_DEBUG=1` to see
 errors on stderr. Set `SKILL_AUTOROUTE_DISABLE=1` to switch it off for one run.
 
 ## Uninstall

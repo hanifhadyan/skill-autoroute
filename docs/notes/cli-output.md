@@ -79,6 +79,7 @@ Throwaway project with `.claude/settings.json` holding one `UserPromptSubmit` co
 
 - Claude probes: use `--setting-sources "" --strict-mcp-config --disable-slash-commands` (cuts a call from ~73k to ~4.5k input tokens, login intact). Never `--bare`. Read `structured_output`; guard on `is_error`.
 - Codex probes: use `--ignore-user-config -s read-only` (login intact; avoids the gateway stderr error). Read the last `agent_message` `item.text`, then `turn.completed.usage`.
+- Codex calls also pass `--disable shell_tool --disable unified_exec`. Both feature names are listed by `codex features list` on codex-cli 0.164.0. Whether they take effect in a real run is not verified (the Codex account was at its usage limit); `-s read-only` stays as the backstop.
 - Always spawn both CLIs with stdin ignored.
 - Codex hook install cannot be verified headless; the installer must tell the user to trust the hook via `/hooks`.
 

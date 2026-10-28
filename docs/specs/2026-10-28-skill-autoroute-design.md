@@ -89,6 +89,15 @@ Boundaries:
 
 Location: `~/.config/skill-autoroute/routes.json`, or `.skill-autoroute/routes.json` with `--project`.
 
+In a project table, `path` and `roots` are relative to the project root (for example
+`.claude/skills/x/SKILL.md`), so the table works after a clone or a move. AI-written scan text is not stored there: an
+AI finding reads "AI flagged this (details in the install output)". User tables keep absolute real paths.
+
+Hook command (one per tool): `"<node that ran install>" "<data folder>/route.mjs" <tool>` at user level, and
+`node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs" <tool>` at project level (shared settings, so no machine
+path). The hook hints only entries whose `tool` equals the argument; no argument means all. The marker substring
+`skill-autoroute/route.mjs` is unchanged; a second install updates an older entry in place.
+
 ```json
 {
   "version": 1,
@@ -229,8 +238,8 @@ skill. The package must show the cost plainly and must not claim savings.
 - A matching prompt gets one line of at most 3 skills. `tokens` prints the hint each enabled skill would add, with
   its size in characters and an estimate in tokens (characters / 4, labelled estimate).
 - Optional local log (`install --log`): the hook appends timestamp, number of hints and hint characters to
-  `~/.config/skill-autoroute/usage.log`. It never writes prompt text. `tokens` then reports fires per day and the
-  average added per prompt and per day.
+  `~/.config/skill-autoroute/usage.log`. It never writes prompt text. `tokens` then reports fires per active day (a day
+  with at least one fire) and the average added per prompt and per active day.
 - `bench`: real measurement. It runs a fixed set of sample prompts through the chosen CLI headlessly twice, once with
   the hook and once without, and reports the input-token difference per prompt from real usage data. It costs quota, so
   it shows its own estimate and asks first.
@@ -253,8 +262,8 @@ step with `--model <step>=<model>`.
   own `config.toml` may set a high effort (for example `max`) that would otherwise apply to every install call.
 - Codex model names change often. Each tier has a preference list in one file (`src/tools/codex-models.js`):
   small = `gpt-6-luna`, `gpt-5.6-luna`; mid = `gpt-6.1-sol`, `gpt-6-sol`. At run time the adapter reads
-  `~/.codex/models_cache.json` and takes the first slug from the list that is present with `visibility: "list"`. If the
-  cache is missing or no slug matches, it uses the user's configured `model` with the step's effort level, and the
+  `$CODEX_HOME/models_cache.json` (default `~/.codex`) and takes the first slug from the list that is present with `visibility: "list"`. If the
+  cache is missing or no slug matches, it uses the user's configured top-level `model` with the step's effort level, and the
   summary says so. The frontier model (`gpt-6-astra` today) is never chosen by default.
 - The install summary prints the model each step used.
 
@@ -263,13 +272,19 @@ step with `--model <step>=<model>`.
 `hook/route.js`:
 
 1. Read the hook JSON from stdin; take `prompt`.
-2. Load the user-level `routes.json` and the project one if present. Project entries override user entries of the same
-   skill.
-3. Match enabled rules. Return at most 3 skills, in priority order.
+2. Load the user-level `routes.json` and the project one if present (relative paths resolved against
+   `CLAUDE_PROJECT_DIR`, else the current folder; entries outside the project dropped). Project entries override user
+   entries of the same skill. The project hook copy exits silently when the user hook copy exists.
+3. Keep entries of the tool named in `argv[2]` (all when absent). Re-check each entry, because a project table is
+   untrusted: skip patterns over 300 characters or with nested quantifiers (the same static check as validation; no
+   timing), skip paths that do not end in `SKILL.md` or whose `SKILL.md` is gone, cap names at 100 characters and
+   replace characters outside `[A-Za-z0-9._:@/ -]` with `?`. Match enabled rules. Return at most 3 skills, in priority
+   order.
 4. Print `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Skills that fit this work
    (read each SKILL.md before you start): X (path); ..."}}`.
-5. Staleness: if any skill folder's modified time is newer than `generatedAt`, add one line naming the count and
-   `npx skill-autoroute regenerate`.
+5. Staleness: count table skills whose `SKILL.md` (or its folder) is newer than `generatedAt` or gone, plus folders in
+   a root that hold a `SKILL.md` and whose real path is not the folder of any table skill. If the count is above 0, add
+   one line, "1 skill changed" or "N skills changed since the last generate. Run: npx skill-autoroute regenerate".
 6. On any error: print nothing, exit 0. `SKILL_AUTOROUTE_DEBUG=1` logs errors to stderr.
 
 ## 11. Testing

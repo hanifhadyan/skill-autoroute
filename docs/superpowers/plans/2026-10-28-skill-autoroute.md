@@ -16,7 +16,7 @@
 - `hook/route.js` imports Node built-ins only. On any error it prints nothing and exits 0. `SKILL_AUTOROUTE_DEBUG=1` logs errors to stderr.
 - At most 3 hints per prompt. No output when no rule matches.
 - A clean scan reads "no issues found", never "safe". AI scan can only raise severity, never clear a static high finding.
-- Headless calls that read skill content run with no tools (`claude -p --tools ""`) or the read-only sandbox (`codex exec`, never `--dangerously-bypass-approvals-and-sandbox`, never `--full-auto`).
+- Headless calls that read skill content run with no tools (`claude -p --tools ""`) or, for Codex, with `--disable shell_tool --disable unified_exec` and the read-only sandbox as backstop (`codex exec -s read-only`, never `--dangerously-bypass-approvals-and-sandbox`, never `--full-auto`). Codex paths derive from `CODEX_HOME` when set (default `~/.codex`).
 - Default models per step (spec section 9): probe and triggers = Claude `haiku` effort `low` / Codex small tier effort `low`; duplicates and deep scan = Claude `sonnet` effort `medium` / Codex mid tier effort `medium`. Codex tiers: small `["gpt-6-luna","gpt-5.6-luna"]`, mid `["gpt-6.1-sol","gpt-6-sol"]`. Codex calls always pass `-c model_reasoning_effort=<level>`.
 - Config edits back up the original once to `<file>.bak-skill-autoroute` and mark the hook entry by the substring `skill-autoroute` in its `command`.
 - User data paths: `~/.config/skill-autoroute/` (user scope), `.skill-autoroute/` (project scope). All paths derive from `os.homedir()` and `process.cwd()` so tests can set `HOME` and cwd.
