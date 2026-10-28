@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.4.0] - 2026-10-28
+
+### Added
+
+- `words <skill> add|remove <word...>` adds your own trigger words to a skill, and `words` lists
+  them. Words are plain text matched as whole words; a match puts that skill first among the hints.
+  `regenerate` and `install` keep them. Up to 20 words per skill, 60 characters each. A word that
+  also fires on ordinary replies gives a warning.
+- README: a "Hint quality" section with the measured results, and a section on own trigger words.
+
 ## [0.3.0] - 2026-10-28
 
 ### Changed
@@ -68,6 +78,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.4.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.1.0...v0.2.0
