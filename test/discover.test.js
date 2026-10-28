@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cpSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, chmodSync, rmSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseFrontmatter, discover } from '../src/discover.js';
 
@@ -175,4 +175,26 @@ test('parseFrontmatter: wrapped plain scalar, BOM, empty block', () => {
   assert.equal(w.allowedTools, 'Read');
   assert.equal(parseFrontmatter('\uFEFF---\nname: bom\n---\nB').name, 'bom');
   assert.deepEqual(parseFrontmatter('---\n---\nB'), { body: 'B' });
+});
+
+test('projects: a folder found for two projects lists both; a folder also found globally has none', () => {
+  const { d, cleanup } = tmpCopy();
+  try {
+    const scoped = discover([
+      { dir: d, tool: 'claude', source: 'project', projects: ['/p/a'] },
+      { dir: d, tool: 'claude', source: 'project', projects: ['/p/b'] },
+    ]);
+    assert.ok(scoped.every((s) => s.projects.join() === '/p/a,/p/b'));
+    const global = discover([{ dir: d, tool: 'claude', source: 'user' }, { dir: d, tool: 'claude', source: 'project', projects: ['/p/a'] }]);
+    assert.ok(global.every((s) => s.projects === undefined));
+  } finally { cleanup(); }
+});
+
+test('only: a dir entry with `only` returns just those skill folders', () => {
+  const { d, cleanup } = tmpCopy();
+  try {
+    const all = discover([{ dir: d, tool: 'claude', source: 'user' }]);
+    const one = discover([{ dir: d, tool: 'claude', source: 'user', only: [basename(all[0].dir)] }]);
+    assert.deepEqual(one.map((s) => s.name), [all[0].name]);
+  } finally { cleanup(); }
 });

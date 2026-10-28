@@ -66,9 +66,10 @@ function walk(root, realDir, rel, seen, found, outside, skipped) {
 export function discover(dirs) {
   const skills = [];
   const done = new Map(); // real dir -> skill, so a folder shared by two tools lists both
-  for (const { dir, tool, source } of dirs) {
+  for (const { dir, tool, source, projects, only } of dirs) {
     let names;
     try { names = readdirSync(dir).sort(); } catch { continue; }
+    if (Array.isArray(only)) names = names.filter((n) => only.includes(n));
     for (const folder of names) {
       let real;
       try {
@@ -78,6 +79,8 @@ export function discover(dirs) {
       if (done.has(real)) {
         const prev = done.get(real);
         if (prev && !prev.tools.includes(tool)) prev.tools.push(tool);
+        // A skill stays scoped only while every dir that lists it is scoped; one global listing makes it global.
+        if (prev?.projects) prev.projects = projects ? [...new Set([...prev.projects, ...projects])] : undefined;
         continue;
       }
       const skillPath = join(real, 'SKILL.md');
@@ -99,7 +102,7 @@ export function discover(dirs) {
       const skill = {
         name: fm.name || folder,
         description: fm.description || '',
-        tool, tools: [tool], source, dir: real, skillPath,
+        tool, tools: [tool], source, ...(projects ? { projects: [...projects] } : {}), dir: real, skillPath,
         hash: `sha256:${h.digest('hex')}`,
         files: found.map((f) => f.real),
         outside: outside.sort(),

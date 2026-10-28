@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.5.0] - 2026-10-28
+
+### Added
+
+- The user install now routes skills that only some projects load: a project's own `.claude/skills` folder
+  and plugins enabled only in its `.claude/settings.json` or `.claude/settings.local.json`. Projects come from
+  the folders Claude Code has opened (`~/.claude.json`). These entries carry `projects`, and the hook hints
+  them only inside that project or a git worktree of it. Nothing is written into the project.
+  A project that has a plugin installed for it (`projectPath` in `installed_plugins.json`) counts too.
+
+### Fixed
+
+- Plugins whose `plugin.json` lists skill folders deeper than `skills/<name>` (for example
+  `skills/engineering/tdd`) were not found. The manifest list is now followed.
+
 ## [0.4.1] - 2026-10-28
 
 ### Changed
@@ -84,6 +99,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.5.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.2.1...v0.3.0

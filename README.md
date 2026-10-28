@@ -276,7 +276,8 @@ When your skills change, the hint line tells you so. Run `regenerate`.
 
 ![User-level and project-level tables; the hook merges both and the project wins on the same name](https://raw.githubusercontent.com/hanifhadyan/skill-autoroute/main/docs/img/flow-scopes.png)
 
-- **User level** works in every folder.
+- **User level** works in every folder. It also picks up the skills that only one project loads (its own
+`.claude/skills` and plugins enabled only in that project's settings) and hints them only inside that project.
 - **Project level** goes into the repository, so teammates get it on clone. It adds a hook to `.claude/settings.json`.
 Paths are stored relative to the project, and entries that point outside the project are skipped.
 - **Codex** has a user-level hook only. That hook still reads the project table of the folder you run Codex in.
