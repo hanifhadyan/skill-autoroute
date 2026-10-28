@@ -4,9 +4,13 @@ import { openSync, readSync, closeSync, statSync, realpathSync } from 'node:fs';
 import { relative } from 'node:path';
 
 const CAP = 60000;
+const BYTES = 100000; // a CLI argument must stay under 128 KiB (Linux MAX_ARG_STRLEN); characters can be 3 bytes
 const SNIFF = 8192;
 const MAX_FINDINGS = 10;
 const MAX_REASON = 200;
+
+// At most `max` UTF-8 bytes of `s`, never ending in half a character.
+export const cutBytes = (s, max) => (Buffer.byteLength(s) <= max ? s : Buffer.from(s).subarray(0, Math.max(0, max)).toString('utf8').replace(/\uFFFD+$/, ''));
 
 export const nonce = () => randomBytes(8).toString('hex');
 export const wrap = (n, text) => `<untrusted-skill-${n}>\n${text}\n</untrusted-skill-${n}>`;
@@ -54,16 +58,20 @@ function buildInput(skill) {
   const first = real(skill.skillPath);
   const files = [first, ...skill.files.filter((f) => f !== first && real(f) !== first)];
   let out = '';
+  let bytes = 0;
   let partial = false;
   for (const f of files) {
     const room = CAP - out.length;
     const header = `=== file: ${relative(dir, f) || relative(skill.dir, f)} ===\n`;
-    if (room <= header.length) { partial = true; continue; }
+    const byteRoom = BYTES - bytes - Buffer.byteLength(header) - 1;
+    if (room <= header.length || byteRoom <= 0) { partial = true; continue; }
     const r = readText(f, (room - header.length) * 4);
     if (!r) { partial = true; continue; }
-    const body = r.text.slice(0, room - header.length - 1);
+    const body = cutBytes(r.text.slice(0, room - header.length - 1), byteRoom);
     if (r.cut || body.length < r.text.length) partial = true;
-    out += `${header}${body}\n`;
+    const chunk = `${header}${body}\n`;
+    out += chunk;
+    bytes += Buffer.byteLength(chunk);
   }
   return { text: out, partial };
 }

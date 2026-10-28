@@ -44,19 +44,20 @@ function hashFile(path) {
 }
 
 // Collect regular files under `root`. `seen` holds real dir paths so loops end;
-// links that resolve outside `root` are recorded in `outside`, never read or walked.
-function walk(root, realDir, rel, seen, found, outside) {
+// links that resolve outside `root` are recorded in `outside`, never read or walked;
+// node_modules and .git are recorded in `skipped`, never read.
+function walk(root, realDir, rel, seen, found, outside, skipped) {
   if (seen.has(realDir)) return;
   seen.add(realDir);
   let entries;
   try { entries = readdirSync(realDir); } catch { return; }
   for (const name of entries) {
-    if (SKIP.has(name)) continue;
+    if (SKIP.has(name)) { skipped.push(rel + name); continue; }
     try {
       const real = realpathSync(join(realDir, name));
       if (!inside(root, real)) { outside.push(rel + name); continue; }
       const st = statSync(real);
-      if (st.isDirectory()) walk(root, real, `${rel}${name}/`, seen, found, outside);
+      if (st.isDirectory()) walk(root, real, `${rel}${name}/`, seen, found, outside, skipped);
       else if (st.isFile()) found.push({ rel: rel + name, real, hash: hashFile(real) });
     } catch { /* unreadable or dangling: skip */ }
   }
@@ -85,7 +86,8 @@ export function discover(dirs) {
       done.add(real);
       const found = [];
       const outside = [];
-      walk(real, real, '', new Set(), found, outside);
+      const skipped = [];
+      walk(real, real, '', new Set(), found, outside, skipped);
       found.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
       const h = createHash('sha256');
       for (const f of found) h.update(`${f.rel}\0${f.hash}\n`);
@@ -97,6 +99,7 @@ export function discover(dirs) {
         hash: `sha256:${h.digest('hex')}`,
         files: found.map((f) => f.real),
         outside: outside.sort(),
+        skipped: skipped.sort(),
       });
     }
   }

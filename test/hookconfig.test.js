@@ -141,3 +141,17 @@ test('addHook rejects a command without the marker', () => {
     assert.equal(existsSync(p), false);
   } finally { cleanup(); }
 });
+
+test('an older entry of ours (no tool argument) is updated in place, not duplicated; uninstall still removes it', () => {
+  const { home, cleanup } = fakeHome();
+  try {
+    const p = join(home, 'settings.json');
+    writeFileSync(p, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'echo mine' }, { type: 'command', command: CMD }] }] } }));
+    assert.deepEqual(removeHook(p), { changed: true }, 'old entry without the argument is ours by marker');
+    writeFileSync(p, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'echo mine' }, { type: 'command', command: CMD }] }] } }));
+    const next = `${CMD} claude`;
+    assert.deepEqual(addHook(p, next), { changed: true });
+    assert.deepEqual(read(p).hooks.UserPromptSubmit, [{ hooks: [{ type: 'command', command: 'echo mine' }, { type: 'command', command: next }] }]);
+    assert.deepEqual(addHook(p, next), { changed: false });
+  } finally { cleanup(); }
+});

@@ -6,6 +6,9 @@ import { spawnSync } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+// Tests point HOME at temp dirs; a CODEX_HOME from the real shell would lead back to the real Codex folder.
+delete process.env.CODEX_HOME;
+
 export function fakeHome() {
   const home = mkdtempSync(join(tmpdir(), 'skill-autoroute-'));
   return { home, cleanup: () => rmSync(home, { recursive: true, force: true }) };
@@ -19,9 +22,9 @@ export function fakeCli(dir, name, script) {
   return p;
 }
 
-export function runHook(stdinJson, env = {}, cwd = process.cwd()) {
+export function runHook(stdinJson, env = {}, cwd = process.cwd(), args = []) {
   const t0 = Date.now();
-  const r = spawnSync('node', [join(root, 'hook', 'route.js')], {
+  const r = spawnSync('node', [join(root, 'hook', 'route.js'), ...args], {
     input: typeof stdinJson === 'string' ? stdinJson : JSON.stringify(stdinJson),
     env: { ...process.env, ...env },
     encoding: 'utf8',

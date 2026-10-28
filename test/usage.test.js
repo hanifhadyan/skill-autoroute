@@ -81,7 +81,7 @@ test('writeReport: JSON with generatedAt, rows, totals, estimates; atomic', () =
 
 test('hookReport: per enabled skill hint size matches what the hook really prints', () => {
   const s = skill('alpha', { patterns: [['hello']] });
-  const real = route('hello world', table([s]), () => 0);
+  const real = route('hello world', table([s]), { fs: { mtime: () => 0, list: () => [], real: (p) => p } });
   const text = hookReport(table([s, skill('off', { enabled: false })]), []);
   assert.match(text, new RegExp(`alpha +${real.length} chars +~${Math.ceil(real.length / 4)} tokens \\(estimate\\)`));
   assert.doesNotMatch(text, /off/);
@@ -94,16 +94,16 @@ test('hookReport: 3 log lines on 2 days report 2 days, fires and averages', () =
     '2026-10-28T10:00:00.000Z\t3\t300',
   ];
   const text = hookReport(table([skill('a')]), log);
-  assert.match(text, /3 fires over 2 days/);
-  assert.match(text, /1\.5 fires per day/);
+  assert.match(text, /3 fires over 2 active days/);
+  assert.match(text, /1\.5 fires per active day/);
   assert.match(text, /200 chars per fire \(~50 tokens, estimate\)/);
-  assert.match(text, /300 chars per day \(~75 tokens, estimate\)/);
+  assert.match(text, /300 chars per active day \(~75 tokens, estimate\)/);
 });
 
 test('hookReport: malformed log lines are skipped, never crash', () => {
   const log = ['', 'garbage', 'nope\t1\t2', '2026-10-28T09:00:00.000Z\tx\t5', '2026-10-28T09:00:00.000Z\t1', '2026-10-28T09:00:00.000Z\t1\t40'];
   const text = hookReport(table([skill('a')]), log);
-  assert.match(text, /1 fires over 1 days/);
+  assert.match(text, /1 fires over 1 active days/);
   assert.match(text, /40 chars per fire/);
   assert.doesNotThrow(() => hookReport(table([]), undefined));
   assert.doesNotThrow(() => hookReport(null, null));

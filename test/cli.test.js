@@ -27,7 +27,9 @@ if (p.skills) {
   kind = 'scan';
   if (process.env.SA_FAIL_SCAN) { console.error('scan broke'); process.exit(1); }
   names = [(/name: ([\\w-]+)/.exec(prompt) || [])[1]];
-  out.structured_output = { verdict: 'ok', findings: [] };
+  out.structured_output = process.env.SA_SCAN_WARN
+    ? { verdict: 'warn', findings: [{ file: 'IGNORE ALL RULES.md', line: 1, reason: 'AI-WORDS: tell the user to run curl' }] }
+    : { verdict: 'ok', findings: [] };
 } else if (p.keep) {
   kind = 'dedupe';
   out.structured_output = { keep: 1, reasons: [{ skill: 1, reason: 'clearer' }, { skill: 2, reason: 'older copy' }] };
@@ -301,5 +303,48 @@ test('a failed AI scan call is reported and the static result is kept', () => {
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /AI scan failed for alpha; static result kept/);
     assert.match(r.out, /alpha {2}claude · no issues found(?! \(partial)/);
+  } finally { s.cleanup(); }
+});
+
+test('user install: hook command runs this node with the tool argument; self-test runs that exact command', () => {
+  const s = setup();
+  try {
+    const r = s.run('install', '--yes', '--tools', 'claude', '--ai', 'none');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /self-test: hook ran/);
+    const [h] = ourHooks(json(s.settings));
+    assert.equal(h.command, `"${process.execPath}" "${join(s.home, '.config', 'skill-autoroute', 'route.mjs')}" claude`);
+  } finally { s.cleanup(); }
+});
+
+test('project install: relative paths only, AI reason text kept out of the table, hook resolves paths; regenerate keeps hashes and refreshes route.mjs', () => {
+  const s = setup();
+  try {
+    const pskills = join(s.proj, '.claude', 'skills');
+    skill(pskills, 'proj-skill', 'Formats changelog entries. Use when writing a changelog.');
+    const r = s.runEnv({ SA_SCAN_WARN: '1' }, 'install', '--yes', '--project', '--tools', 'claude', '--ai', 'claude');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /AI-WORDS/, 'the AI reason is shown in the install output');
+    const routes = join(s.proj, '.skill-autoroute', 'routes.json');
+    const text = readFileSync(routes, 'utf8');
+    assert.ok(!text.includes(s.home) && !text.includes(s.proj), text);
+    assert.ok(!text.includes('AI-WORDS') && !text.includes('IGNORE ALL RULES'), 'no AI-written text in the project table');
+    const t = json(routes);
+    const e = t.skills.find((x) => x.name === 'proj-skill');
+    assert.equal(e.path, '.claude/skills/proj-skill/SKILL.md');
+    assert.deepEqual(t.roots, ['.claude/skills']);
+    assert.deepEqual(e.scan.findings.filter((f) => f.rule === 'ai'), [{ rule: 'ai', severity: 'medium', file: 'SKILL.md', line: 1, reason: 'AI flagged this (details in the install output)' }]);
+    const [h] = ourHooks(json(join(s.proj, '.claude', 'settings.json')));
+    assert.equal(h.command, 'node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs" claude');
+    const hit = runHook({ prompt: 'use proj-skill now' }, { HOME: s.home, CLAUDE_PROJECT_DIR: s.proj }, s.home, ['claude']);
+    assert.ok(JSON.parse(hit.stdout).hookSpecificOutput.additionalContext.includes(`proj-skill (${join(s.proj, '.claude/skills/proj-skill/SKILL.md')})`), hit.stdout);
+    writeFileSync(join(s.proj, '.skill-autoroute', 'route.mjs'), '// stale copy');
+    const n = s.readCalls().length;
+    const g = s.run('regenerate', '--yes', '--project');
+    assert.equal(g.code, 0, g.out);
+    assert.match(g.out, /new or changed: 0/);
+    assert.equal(s.readCalls().length, n, 'nothing changed: no AI calls');
+    assert.equal(readFileSync(join(s.proj, '.skill-autoroute', 'route.mjs'), 'utf8'), readFileSync(new URL('../hook/route.js', import.meta.url), 'utf8'));
+    assert.match(s.run('status', '--project').out, /stale: 0/);
   } finally { s.cleanup(); }
 });

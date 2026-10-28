@@ -83,9 +83,9 @@ export function hookReport(table, logLines) {
   const total = fires.reduce((a, f) => a + f.chars, 0);
   const round1 = (n) => Math.round(n * 10) / 10;
   out.push(
-    `Usage log: ${fires.length} fires over ${days} days, ${round1(fires.length / days)} fires per day`,
+    `Usage log: ${fires.length} fires over ${days} active days, ${round1(fires.length / days)} fires per active day`,
     `  average added: ${Math.round(total / fires.length)} chars per fire (~${tokens(total / fires.length)} tokens, estimate)`,
-    `  average added: ${Math.round(total / days)} chars per day (~${tokens(total / days)} tokens, estimate)`,
+    `  average added: ${Math.round(total / days)} chars per active day (~${tokens(total / days)} tokens, estimate)`,
   );
   return out.join('\n');
 }

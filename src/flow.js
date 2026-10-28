@@ -1,25 +1,26 @@
 // Command logic. bin/cli.js only parses argv and supplies `ui`; tests pass a non-interactive ui.
 import { statSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { relative, sep } from 'node:path';
 import * as claude from './tools/claude.js';
 import * as codex from './tools/codex.js';
 import { discover } from './discover.js';
 import { scanStatic, label } from './scan/static.js';
 import { aiScan, mergeScan } from './scan/ai.js';
-import { candidateGroups, aiDedupe } from './dedupe.js';
+import { candidateGroups, aiDedupe, MAX_GROUP } from './dedupe.js';
 import { aiTriggers, keywordRules, TRIGGER_PROMPT } from './triggers.js';
 import { estimate, Recorder, formatReport, writeReport, hookReport } from './usage.js';
 import { readTable, writeTable, mergeTables } from './table.js';
 import { pickModel } from './models.js';
 import { routesPath, reportPath, hookCopyPath, logPath } from './paths.js';
-import { installHookCopy, checkConfig } from './tools/hookconfig.js';
-import { route, staleCount } from '../hook/route.js';
+import { installHookCopy, hookCommand, checkConfig } from './tools/hookconfig.js';
+import { route, staleCount, resolveProject } from '../hook/route.js';
 
 export const ADAPTERS = { claude, codex };
 export class Cancel extends Error {}
 
 const BATCH = 20;
-const OUT_PER_ITEM = { triggers: 60, scan: 150, dedupe: 150 }; // Ruling R33
+const OUT_PER_ITEM = { triggers: 500, scan: 150, dedupe: 150 }; // Ruling R33; triggers raised after review
 const CAP = { scan: 60000, dedupe: 8000 }; // same caps as src/scan/ai.js and src/dedupe.js
 const PROBE_SCHEMA = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
 // Skill text is untrusted: control characters (ESC, BEL, C1) would recolour or retitle the terminal.
@@ -28,6 +29,10 @@ const showLines = (s) => String(s).split('\n').map(show).join('\n');
 const scopeOf = (o) => (o.project ? 'project' : 'user');
 const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
 const size = (f) => { try { return statSync(f).size; } catch { return 0; } };
+// Project tables store paths relative to the project root so the folder can move or be cloned (the hook resolves them).
+const keyOf = (scope) => (p) => (scope === 'project' ? relative(process.cwd(), p).split(sep).join('/') : p);
+const forHook = (scope, t) => (scope === 'project' ? resolveProject(t, process.cwd()) : t);
+const AI_NOTE = 'AI flagged this (details in the install output)';
 
 // Non-interactive ui: every prompt takes its default; AI steps run (spec: --yes never prompts).
 export const plainUi = (log = console.log) => ({
@@ -53,7 +58,7 @@ export function estimates(step, items, overheadPerCall = 0, cacheReadPerCall = 0
   }
   const chars = step === 'scan'
     ? sum(items, (s) => Math.min(CAP.scan, sum(s.files, size)))
-    : sum(items, (g) => sum(g, (s) => Math.min(CAP.dedupe, size(s.skillPath))));
+    : sum(items, (g) => sum(g.slice(0, MAX_GROUP), (s) => Math.min(CAP.dedupe, size(s.skillPath))));
   return estimate({ chars, calls: n, overheadPerCall, cacheReadPerCall, outputPerItem: OUT_PER_ITEM[step], items: n });
 }
 
@@ -99,19 +104,21 @@ export async function runScans(skills, ctx, ui) {
   return scans;
 }
 
-// Returns Map skillPath -> {preferred: true, reason} | {of: name, reason}. Without an AI verdict nothing is marked.
+// Returns Map skillPath -> {preferred: true, reason} | {of: name, from, reason} | {tooLarge: true}. Without an AI verdict nothing is marked.
 export async function runDedupe(skills, ctx, ui) {
   const out = new Map();
   const groups = candidateGroups(skills);
   if (!(await aiStep(ctx, ui, 'dedupe', groups, 'duplicate comparison'))) return out;
   const m = model(ctx, 'dedupe');
-  for (const g of groups) {
+  for (const all of groups) {
+    const g = all.slice(0, MAX_GROUP);
+    for (const s of all.slice(MAX_GROUP)) out.set(s.skillPath, { tooLarge: true });
     const v = await aiDedupe(ctx.ai, g, m, ctx.rec);
     if (!v.keep) { ui.log(`duplicate comparison failed for ${g.map((s) => show(s.name)).join(', ')}; all kept as found`); continue; }
     const keep = g.find((s) => s.skillPath === v.keep);
     for (const s of g) {
       const reason = v.reasons[s.skillPath] ?? '';
-      out.set(s.skillPath, s === keep ? { preferred: true, reason } : { of: keep.name, reason });
+      out.set(s.skillPath, s === keep ? { preferred: true, reason } : { of: keep.name, from: `${keep.tool}, ${keep.source}`, reason });
     }
   }
   return out;
@@ -122,8 +129,9 @@ export function buildRows(skills, scans, dupes = new Map()) {
     const scan = scans.get(skill.skillPath);
     const dup = dupes.get(skill.skillPath);
     const parts = [`${show(skill.name)}  ${skill.tool}`, show(label(scan))];
-    if (dup) parts.push(dup.preferred ? `★ preferred: ${show(dup.reason)}` : `duplicate of ${show(dup.of)}: ${show(dup.reason)}`);
-    return { skill, scan, dup, enabled: scan.verdict !== 'block' && !(dup && !dup.preferred), text: parts.join(' · ') };
+    const of = dup?.of && `duplicate of ${show(dup.of)}${dup.of === skill.name && dup.from ? ` (${show(dup.from)})` : ''}`;
+    if (dup) parts.push(dup.preferred ? `★ preferred: ${show(dup.reason)}` : dup.tooLarge ? 'duplicate group too large to compare' : `${of}: ${show(dup.reason)}`);
+    return { skill, scan, dup, enabled: scan.verdict !== 'block' && !dup?.of, text: parts.join(' · ') };
   });
 }
 const rowText = (r, on) => (on ? r.text : `${r.text} · still loaded by ${r.skill.tool}`);
@@ -146,12 +154,18 @@ export async function generate(skills, ctx, ui) {
   return { mode: 'keywords', bySkill, rejected: [], fellBack: skills.filter((s) => !bySkill.has(s.name)).map((s) => s.name) };
 }
 
-const entry = (r, gen) => {
+// A project table is shared in git: AI-written text (reason, file name) stays out of it.
+function tableFindings(scope, skill, findings) {
+  if (scope !== 'project') return findings;
+  const files = new Set(skill.files.map((f) => relative(skill.dir, f).split(sep).join('/')));
+  return findings.map((f) => (f.rule === 'ai' ? { ...f, file: files.has(f.file) ? f.file : 'SKILL.md', reason: AI_NOTE } : f));
+}
+const entry = (r, gen, scope) => {
   const g = r.enabled ? gen.bySkill.get(r.skill.name) : null;
   return {
-    name: r.skill.name, tool: r.skill.tool, path: r.skill.skillPath, hash: r.skill.hash, enabled: r.enabled,
+    name: r.skill.name, tool: r.skill.tool, path: keyOf(scope)(r.skill.skillPath), hash: r.skill.hash, enabled: r.enabled,
     priority: g?.priority ?? 50, patterns: g?.rules ?? [],
-    scan: { verdict: r.scan.verdict, partial: r.scan.partial, findings: r.scan.findings }, duplicateOf: r.dup?.of ?? null,
+    scan: { verdict: r.scan.verdict, partial: r.scan.partial, findings: tableFindings(scope, r.skill, r.scan.findings) }, duplicateOf: r.dup?.of ?? null,
   };
 };
 const tableOf = (ctx, skills, roots, log) => ({
@@ -171,9 +185,9 @@ export function write(scope, table, tools, ctx) {
   try {
     writeTable(routesPath(scope), table); done.push(routesPath(scope));
     writeReport(reportPath(scope), ctx.rec, ctx.est); done.push(reportPath(scope));
-    const cmd = installHookCopy(scope); done.push(hookCopyPath(scope));
+    installHookCopy(scope); done.push(hookCopyPath(scope));
     return tools.map((t) => {
-      const r = { tool: t, ...ADAPTERS[t].installHook(scope, cmd) };
+      const r = { tool: t, ...ADAPTERS[t].installHook(scope, hookCommand(scope, t)) };
       if (r.changed) done.push(`${t} hook config`);
       return r;
     });
@@ -182,9 +196,12 @@ export function write(scope, table, tools, ctx) {
   }
 }
 
-// Feeds a prompt to the installed hook copy and checks the output shape (empty, or one JSON line with additionalContext).
-export function selfTest(scope) {
-  const r = spawnSync(process.execPath, [hookCopyPath(scope)], { input: JSON.stringify({ prompt: 'skill-autoroute self-test' }), encoding: 'utf8', timeout: 10000 });
+// Runs the exact hook command written to the tool config and checks the output shape (empty, or one JSON line with additionalContext).
+export function selfTest(scope, tool) {
+  const r = spawnSync(hookCommand(scope, tool), {
+    shell: true, input: JSON.stringify({ prompt: 'skill-autoroute self-test' }), encoding: 'utf8', timeout: 10000,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() },
+  });
   if (r.status !== 0) return false;
   if (!r.stdout.trim()) return true;
   try { return typeof JSON.parse(r.stdout).hookSpecificOutput.additionalContext === 'string'; } catch { return false; }
@@ -246,14 +263,14 @@ export async function install(o, ui) {
   const scans = await runScans(skills, ctx, ui);
   const rows = await pickRows(buildRows(skills, scans, await runDedupe(skills, ctx, ui)), ui);
   const gen = await generate(rows.filter((r) => r.enabled).map((r) => r.skill), ctx, ui);
-  const table = tableOf(ctx, rows.map((r) => entry(r, gen)), roots, o.log);
+  const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log);
   while (!ui.yes) {
     const p = await ui.text('Preview: type a prompt to see its hints (empty to finish)');
     if (!p) break;
-    ui.log(show(route(p, table) ?? '(no hints for this prompt)'));
+    ui.log(show(route(p, forHook(scope, table)) ?? '(no hints for this prompt)'));
   }
   const notes = write(scope, table, tools, ctx);
-  if (selfTest(scope)) ui.log('self-test: hook ran and its output has the right shape');
+  if (tools.filter((t) => ADAPTERS[t].hookConfig(scope)).every((t) => selfTest(scope, t))) ui.log('self-test: hook ran and its output has the right shape');
   else { ui.log('self-test FAILED: the hook copy did not run cleanly'); process.exitCode = 1; }
   ui.log(`routed: ${table.skills.filter((s) => s.enabled).length} skills, off: ${table.skills.filter((s) => !s.enabled).length}. Table: ${show(routesPath(scope))}`);
   summary(ctx, gen, notes, ui);
@@ -273,32 +290,35 @@ export async function regenerate(o, ui) {
   const tools = o.tools ?? (known.length ? known : findTools().filter((t) => t.cli || t.configDir).map((t) => t.name));
   const ctx = context(o.ai ?? old.generator?.ai ?? 'none', o);
   ctx.overhead = Number(old.generator?.overheadPerCall) || 0;
+  const key = keyOf(scope);
   const prev = new Map(old.skills.map((s) => [s.path, s]));
+  const was = (s) => prev.get(key(s.skillPath));
   const { skills, roots } = findSkills(tools, scope);
   ctx.cacheOverhead = Number(old.generator?.cacheReadPerCall) || 0;
-  const fresh = skills.filter((s) => prev.get(s.skillPath)?.hash !== s.hash);
+  const fresh = skills.filter((s) => was(s)?.hash !== s.hash);
   // unchanged and enabled but without rules (turned on with `set` after generate): they only need rules
-  const bare = skills.filter((s) => !fresh.includes(s) && prev.get(s.skillPath).enabled && !prev.get(s.skillPath).patterns?.length);
+  const bare = skills.filter((s) => !fresh.includes(s) && was(s).enabled && !was(s).patterns?.length);
   ui.log(`skills: ${skills.length}, new or changed: ${fresh.length}, enabled without rules: ${bare.length}`);
   const rows = buildRows(fresh, await runScans(fresh, ctx, ui)).map((r) => {
-    const was = prev.get(r.skill.skillPath);
-    if (!was) return r;
-    const off = Boolean(was.enabled) && r.scan.verdict === 'block'; // Ruling R35
+    const w = was(r.skill);
+    if (!w) return r;
+    const off = Boolean(w.enabled) && r.scan.verdict === 'block'; // Ruling R35
     const n = show(r.skill.name);
     if (off) ui.log(`${n} turned off: ${show(label(r.scan))}; run \`npx skill-autoroute set ${n} on\` to override`);
-    return { ...r, enabled: Boolean(was.enabled) && !off, dup: was.duplicateOf ? { of: was.duplicateOf } : undefined };
+    return { ...r, enabled: Boolean(w.enabled) && !off, dup: w.duplicateOf ? { of: w.duplicateOf } : undefined };
   });
   const gen = await generate([...rows.filter((r) => r.enabled).map((r) => r.skill), ...bare], ctx, ui);
-  const byPath = new Map(rows.map((r) => [r.skill.skillPath, entry(r, gen)]));
+  const byPath = new Map(rows.map((r) => [r.skill.skillPath, entry(r, gen, scope)]));
   for (const s of bare) {
     const g = gen.bySkill.get(s.name);
-    byPath.set(s.skillPath, { ...prev.get(s.skillPath), priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
+    byPath.set(s.skillPath, { ...was(s), priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
   }
-  const table = tableOf(ctx, skills.map((s) => byPath.get(s.skillPath) ?? prev.get(s.skillPath)), roots, old.log);
+  const table = tableOf(ctx, skills.map((s) => byPath.get(s.skillPath) ?? was(s)), roots.map(key), old.log);
   if (!o.ai && old.generator) table.generator = old.generator; // unchanged rules still come from the old generator
   printRows(rows, ui);
   writeTable(routesPath(scope), table);
   writeReport(reportPath(scope), ctx.rec, ctx.est);
+  installHookCopy(scope); // a newer package version brings a newer hook
   summary(ctx, gen, [], ui);
 }
 
@@ -320,12 +340,12 @@ export function status(o, ui) {
   const t = readTable(routesPath(scope));
   if (!t) return ui.log(`no table at ${routesPath(scope)}`);
   ui.log(`skills: ${t.skills.filter((s) => s.enabled).length}/${t.skills.length} enabled`);
-  ui.log(`stale: ${staleCount(mergeTables(t, null))}${t.generatedAt ? ` (generated ${show(t.generatedAt)})` : ''}`);
+  ui.log(`stale: ${staleCount(forHook(scope, mergeTables(t, null)))}${t.generatedAt ? ` (generated ${show(t.generatedAt)})` : ''}`);
 }
 
 export function tokens(o, ui) {
   const user = readTable(routesPath('user'));
-  const table = o.project ? mergeTables(user, readTable(routesPath('project'))) : user;
+  const table = o.project ? mergeTables(user, forHook('project', readTable(routesPath('project')))) : user;
   let log = '';
   try { log = readFileSync(logPath(), 'utf8'); } catch { /* no log yet */ }
   ui.log(showLines(hookReport(table, log)));

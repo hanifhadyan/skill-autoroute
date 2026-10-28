@@ -138,3 +138,16 @@ test('aiScan: SKILL.md over the cap keeps SKILL.md first, skips the other file, 
     assert.ok(!prompt.includes('OTHER-FILE') && !prompt.includes('scripts/run.sh'));
   } finally { cleanup(); }
 });
+
+test('aiScan: the prompt stays under 100000 bytes of skill text with multi-byte characters', async () => {
+  const { skill, cleanup } = mkSkill({ 'SKILL.md': '€'.repeat(50000), 'b.md': 'x' });
+  try {
+    const f = fake(() => reply({ verdict: 'ok', findings: [] }));
+    const r = await aiScan(f, skill);
+    const bytes = Buffer.byteLength(f.calls[0].prompt);
+    assert.ok(bytes < 101000, `${bytes} bytes`);
+    assert.ok(Buffer.byteLength((f.calls[0].prompt.match(/€+/) ?? [''])[0]) > 90000);
+    assert.equal(r.partial, true);
+    assert.ok(!f.calls[0].prompt.includes('�'));
+  } finally { cleanup(); }
+});

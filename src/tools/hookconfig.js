@@ -30,9 +30,11 @@ function save(path, cfg) {
   mkdirSync(dirname(path), { recursive: true });
   const target = existsSync(path) ? realpathSync(path) : path;
   const tmp = `${target}.tmp-${process.pid}`;
+  const mode = existsSync(target) ? statSync(target).mode & 0o7777 : null;
   try {
-    writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
-    if (existsSync(target)) chmodSync(tmp, statSync(target).mode & 0o7777);
+    // created with the target's mode, so a private config is never world-readable, not even briefly
+    writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n', mode === null ? undefined : { mode });
+    if (mode !== null) chmodSync(tmp, mode); // the umask may have narrowed it
     renameSync(tmp, target);
   } catch (e) {
     try { unlinkSync(tmp); } catch { /* nothing to clean */ }
@@ -46,11 +48,15 @@ export function addHook(configPath, command) {
   if (!command.includes(MARK)) throw new Error(`hook command must contain "${MARK}"`);
   const { cfg, existed } = load(configPath);
   const groups = cfg.hooks?.[EVENT] ?? [];
-  if (groups.some((g) => groupHooks(g).some(ours))) return { changed: false };
+  const mine = groups.flatMap(groupHooks).filter(ours);
+  if (mine.length && mine.every((h) => h.command === command)) return { changed: false };
   const bak = `${configPath}.bak-skill-autoroute`;
   if (existed && !existsSync(bak)) copyFileSync(configPath, bak);
-  cfg.hooks ??= {};
-  cfg.hooks[EVENT] = [...groups, { hooks: [{ type: 'command', command }] }];
+  if (mine.length) for (const h of mine) h.command = command; // an older install (other node, no tool argument): update in place
+  else {
+    cfg.hooks ??= {};
+    cfg.hooks[EVENT] = [...groups, { hooks: [{ type: 'command', command }] }];
+  }
   save(configPath, cfg);
   return { changed: true };
 }
@@ -80,7 +86,7 @@ export function hasHook(configPath) {
   try { return (load(configPath).cfg.hooks?.[EVENT] ?? []).some((g) => groupHooks(g).some(ours)); } catch { return false; }
 }
 
-// The npx cache can vanish after install, so the hook runs from a copy in the data folder.
+// The npx cache can vanish after install, so the hook runs from a copy in the data folder. Returns the copy's path.
 export function installHookCopy(scope) {
   const dest = hookCopyPath(scope);
   mkdirSync(dirname(dest), { recursive: true });
@@ -92,5 +98,11 @@ export function installHookCopy(scope) {
     try { unlinkSync(tmp); } catch { /* nothing to clean */ }
     throw e;
   }
-  return scope === 'project' ? 'node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs"' : `node "${dest}"`;
+  return dest;
 }
+
+// The hook command for one tool; the tool argument makes the hook hint only that tool's skills.
+// User scope runs the installing node by absolute path; project settings are shared in git, so they name `node`.
+export const hookCommand = (scope, tool) => (scope === 'project'
+  ? `node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs" ${tool}`
+  : `"${process.execPath}" "${hookCopyPath(scope)}" ${tool}`);

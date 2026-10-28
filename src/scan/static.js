@@ -196,6 +196,7 @@ export function scanStatic(skill) {
     }
   }
   for (const rel of skill.outside) { partial = true; add('outside-link', rel, 0); }
+  if (skill.skipped?.length) partial = true; // node_modules and .git are never read
 
   const verdict = findings.some((f) => f.severity === 'high') ? 'block'
     : findings.some((f) => f.severity === 'medium') ? 'warn' : 'ok';

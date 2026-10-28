@@ -233,3 +233,10 @@ test('a file that cannot be read is skipped and the scan is partial', () => {
     assert.equal(r.partial, true);
   } finally { cleanup(); }
 });
+
+test('a skipped node_modules or .git folder makes the scan partial', () => {
+  const r = scan({ 'node_modules/x.js': 'x' });
+  assert.equal(r.partial, true);
+  assert.equal(label(r), 'no issues found (partial scan)');
+  assert.equal(scan({}).partial, false);
+});

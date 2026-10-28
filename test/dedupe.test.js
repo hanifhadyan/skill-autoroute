@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { candidateGroups, aiDedupe, DEDUPE_SCHEMA } from '../src/dedupe.js';
+import { candidateGroups, aiDedupe, DEDUPE_SCHEMA, MAX_GROUP } from '../src/dedupe.js';
 import { Recorder } from '../src/usage.js';
 
 const sk = (name, description, source = 'user', skillPath = `/x/${source}/${name}/SKILL.md`) => ({ name, description, source, skillPath });
@@ -115,5 +115,36 @@ test('aiDedupe: reads only the start of a huge SKILL.md', async () => {
     const f = fake(() => ({ json: { keep: 1, reasons: [] } }));
     await aiDedupe(f, [sk('big', 'd', 'user', p), sk('big', 'd', 'user', p)], {});
     assert.equal(f.calls[0].prompt.match(/Z+/g)[0].length, 8000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('candidateGroups groups only within one tool', () => {
+  const a = { ...sk('tdd', 'Guides test driven development workflow'), tool: 'claude' };
+  const b = { ...sk('tdd', 'Guides test driven development workflow', 'other'), tool: 'codex' };
+  assert.deepEqual(candidateGroups([a, b]), []);
+  assert.equal(candidateGroups([a, { ...b, tool: 'claude' }]).length, 1);
+});
+
+test('aiDedupe: "Skill N" in a reason becomes that member\'s name', async () => {
+  const { group, cleanup } = mkGroup();
+  try {
+    const f = fake(() => ({ json: { keep: 1, reasons: [{ skill: 2, reason: 'Skill 1 covers more; Skill 2 is older. Skill 9 stays.' }] } }));
+    const r = await aiDedupe(f, group, {});
+    assert.equal(r.reasons[group[1].skillPath], 'a covers more; b is older. Skill 9 stays.');
+  } finally { cleanup(); }
+});
+
+test('aiDedupe: a group is capped at MAX_GROUP members and each body at 12000 bytes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sa-dd-'));
+  try {
+    const members = Array.from({ length: 10 }, (_, i) => { const p = join(dir, `${i}.md`); writeFileSync(p, '€'.repeat(8000)); return sk(`m${i}`, 'd', 'user', p); });
+    const f = fake(() => ({ json: { keep: 1, reasons: [] } }));
+    await aiDedupe(f, members, {});
+    const { prompt } = f.calls[0];
+    assert.equal(MAX_GROUP, 8);
+    assert.match(prompt, /Compare these 8 agent skills/);
+    assert.ok(!prompt.includes('Skill 9:'));
+    assert.ok(Buffer.byteLength(prompt) < 128 * 1024, `${Buffer.byteLength(prompt)} bytes`);
+    assert.equal(Buffer.byteLength(prompt.match(/€+/)[0]), 12000);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

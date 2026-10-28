@@ -3,19 +3,20 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { addHook, removeHook as removeHookFrom, hasHook as hasHookIn } from './hookconfig.js';
 import { runCli, parseJson, onPath, checkPrompt } from './run.js';
+import { codexHome } from './codex-models.js';
 
 export const name = 'codex';
 
 const NO_PROJECT = { changed: false, note: 'codex uses the user-level hook; it reads the project table' };
-const hooksFile = () => join(homedir(), '.codex', 'hooks.json');
+const hooksFile = () => join(codexHome(), 'hooks.json');
 
-export const detect = () => ({ cli: onPath('codex'), configDir: existsSync(join(homedir(), '.codex')) });
+export const detect = () => ({ cli: onPath('codex'), configDir: existsSync(codexHome()) });
 
 export function skillDirs(scope) {
   if (scope === 'project') return [{ dir: join(process.cwd(), '.agents', 'skills'), tool: 'codex', source: 'project' }];
   return [
     { dir: join(homedir(), '.agents', 'skills'), tool: 'codex', source: 'user' },
-    { dir: join(homedir(), '.codex', 'skills'), tool: 'codex', source: 'user' },
+    { dir: join(codexHome(), 'skills'), tool: 'codex', source: 'user' },
   ];
 }
 
@@ -35,6 +36,7 @@ export async function headless({ prompt, schema, model, effort, timeoutMs, loadU
     writeFileSync(schemaFile, typeof schema === 'string' ? schema : JSON.stringify(schema));
     return [
       'exec', '--skip-git-repo-check', '--json', ...(loadUserSettings ? [] : ['--ignore-user-config']), '-s', 'read-only',
+      '--disable', 'shell_tool', '--disable', 'unified_exec', // shell features off by flag; the read-only sandbox is the backstop
       ...(model ? ['-m', model] : []), '-c', `model_reasoning_effort=${effort}`,
       '--output-schema', schemaFile, prompt,
     ];

@@ -81,3 +81,26 @@ test('missing, corrupt or unknown-tier cache falls back', () => {
     assert.deepEqual(resolveCodexModel('huge'), { model: null, fallback: true });
   } finally { process.env.HOME = saved; cleanup(); }
 });
+
+test('CODEX_HOME: models_cache.json and config.toml are read from there', () => {
+  withHome(null, () => {
+    const ch = join(process.env.HOME, 'alt');
+    mkdirSync(ch);
+    process.env.CODEX_HOME = ch;
+    try {
+      writeFileSync(join(ch, 'models_cache.json'), JSON.stringify(cacheOf(['gpt-6-sol', 'list'])));
+      assert.deepEqual(resolveCodexModel('mid'), { model: 'gpt-6-sol', fallback: false });
+      writeFileSync(join(ch, 'config.toml'), 'model = "alt-model"\n');
+      assert.deepEqual(resolveCodexModel('small'), { model: 'alt-model', fallback: true });
+    } finally { delete process.env.CODEX_HOME; }
+  });
+});
+
+test('configuredModel reads top-level keys only: a model under a [section] is ignored', () => {
+  withHome(cacheOf(['x', 'list']), () => {
+    writeFileSync(join(process.env.HOME, '.codex', 'config.toml'), 'model_provider = "gw"\n\n[profiles.fast]\nmodel = "profile-model"\n');
+    assert.deepEqual(resolveCodexModel('mid'), { model: null, fallback: true });
+    writeFileSync(join(process.env.HOME, '.codex', 'config.toml'), 'model = "top"\n[profiles.fast]\nmodel = "profile-model"\n');
+    assert.deepEqual(resolveCodexModel('mid'), { model: 'top', fallback: true });
+  });
+});

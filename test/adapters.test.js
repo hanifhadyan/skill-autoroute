@@ -5,7 +5,9 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, symli
 import { fakeHome, fakeCli } from './helpers.js';
 import * as claude from '../src/tools/claude.js';
 import * as codex from '../src/tools/codex.js';
-import { installHookCopy } from '../src/tools/hookconfig.js';
+import { installHookCopy as copyHook, hookCommand } from '../src/tools/hookconfig.js';
+
+const installHookCopy = (scope, tool = 'claude') => { copyHook(scope); return hookCommand(scope, tool); };
 import { hookCopyPath } from '../src/paths.js';
 
 // Runs fn with HOME, cwd and PATH pointing at a throwaway tree.
@@ -90,6 +92,7 @@ test('codex.headless: argv, schema file, usage, cwd', () => env(async ({ bin, pr
   const { argv, cwd, stdin, schema, schemaFile } = r.json;
   assert.deepEqual(argv.slice(0, 5), ['exec', '--skip-git-repo-check', '--json', '--ignore-user-config', '-s']);
   assert.equal(argv[5], 'read-only');
+  assert.ok(argv.join(' ').includes('read-only --disable shell_tool --disable unified_exec'), 'shell features off; sandbox stays as backstop');
   assert.ok(argv.join(' ').includes('-m gpt-6-luna -c model_reasoning_effort=low --output-schema'));
   assert.equal(argv.at(-1), 'hello');
   for (const bad of ['--full-auto', '--dangerously-bypass-approvals-and-sandbox']) assert.ok(!argv.includes(bad));
@@ -115,14 +118,18 @@ test('codex.headless: null model omits -m; failures reject', () => env(async ({ 
   await assert.rejects(codex.headless(args), /not JSON/);
 }));
 
-test('installHookCopy copies the hook and the command points at the copy', () => env(async ({ home, proj }) => {
-  const cmd = installHookCopy('user');
+test('installHookCopy copies the hook; hookCommand runs the copy with this node and passes the tool', () => env(async ({ home, proj }) => {
+  assert.equal(copyHook('user'), hookCopyPath('user'));
   const copy = hookCopyPath('user');
-  assert.equal(cmd, `node "${copy}"`);
+  assert.equal(hookCommand('user', 'claude'), `"${process.execPath}" "${copy}" claude`);
+  assert.equal(hookCommand('user', 'codex'), `"${process.execPath}" "${copy}" codex`);
   assert.ok(copy.startsWith(home));
   assert.equal(readFileSync(copy, 'utf8'), readFileSync(new URL('../hook/route.js', import.meta.url), 'utf8'));
-  assert.equal(installHookCopy('project'), 'node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs"');
+  copyHook('project');
+  // project settings are shared in git, so the command names `node` on PATH, not this machine's node
+  assert.equal(hookCommand('project', 'claude'), 'node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs" claude');
   assert.ok(existsSync(join(proj, '.skill-autoroute', 'route.mjs')));
+  for (const sc of ['user', 'project']) assert.ok(hookCommand(sc, 'claude').includes('skill-autoroute/route.mjs'));
 }));
 
 test('claude.installHook / removeHook edit the right config per scope', () => env(async ({ home, proj }) => {
@@ -137,10 +144,10 @@ test('claude.installHook / removeHook edit the right config per scope', () => en
 }));
 
 test('codex.installHook: user edits hooks.json; project is a no-op', () => env(async ({ home, proj }) => {
-  const r = codex.installHook('user', installHookCopy('user'));
+  const r = codex.installHook('user', installHookCopy('user', 'codex'));
   assert.equal(r.changed, true);
   assert.match(r.note, /\/hooks/);
-  assert.deepEqual(codex.installHook('user', installHookCopy('user')), { changed: false }, 'no trust note when nothing changed');
+  assert.deepEqual(codex.installHook('user', installHookCopy('user', 'codex')), { changed: false }, 'no trust note when nothing changed');
   assert.ok(existsSync(join(home, '.codex', 'hooks.json')));
   const note = 'codex uses the user-level hook; it reads the project table';
   assert.deepEqual(codex.installHook('project', 'x'), { changed: false, note });
@@ -284,4 +291,20 @@ test('headless loadUserSettings drops the context-cutting flags and passes env (
   const c = await codex.headless({ prompt: 'p', schema: SCHEMA, model: 'm', effort: 'low', loadUserSettings: true, env: { A: 'b' } });
   assert.ok(!c.json.argv.includes('--ignore-user-config'));
   assert.ok(c.json.argv.includes('read-only'));
+  assert.ok(c.json.argv.join(' ').includes('--disable shell_tool --disable unified_exec'));
+}));
+
+test('CODEX_HOME moves hooks.json, the config dir check and the codex skills dir; ~/.agents/skills stays under HOME', () => env(async ({ home }) => {
+  const ch = join(home, 'alt-codex');
+  process.env.CODEX_HOME = ch;
+  try {
+    assert.equal(codex.detect().configDir, false);
+    mkdirSync(ch);
+    assert.equal(codex.detect().configDir, true);
+    assert.equal(codex.hookConfig('user'), join(ch, 'hooks.json'));
+    assert.deepEqual(codex.skillDirs('user').map((d) => d.dir), [join(home, '.agents/skills'), join(ch, 'skills')]);
+    assert.equal(codex.installHook('user', installHookCopy('user', 'codex')).changed, true);
+    assert.ok(existsSync(join(ch, 'hooks.json')) && !existsSync(join(home, '.codex')));
+    assert.equal(codex.hasHook('user'), true);
+  } finally { delete process.env.CODEX_HOME; }
 }));

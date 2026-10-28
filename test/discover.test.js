@@ -82,7 +82,11 @@ test('node_modules and .git are skipped', () => {
       mkdirSync(join(d, 'alpha', n));
       writeFileSync(join(d, 'alpha', n, 'x.js'), 'x');
     }
-    assert.equal(discover(roots(d)).find((s) => s.name === 'alpha').files.length, 2);
+    mkdirSync(join(d, 'alpha', 'scripts', 'node_modules'));
+    const alpha = discover(roots(d)).find((s) => s.name === 'alpha');
+    assert.equal(alpha.files.length, 2);
+    assert.deepEqual(alpha.skipped, ['.git', 'node_modules', 'scripts/node_modules']);
+    assert.deepEqual(discover(roots(d)).find((s) => s.name === 'beta').skipped, []);
   } finally { cleanup(); }
 });
 
