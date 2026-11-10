@@ -11,7 +11,8 @@ Each release on GitHub uses the notes from its section below.
 ### Changed
 
 - README: a "Measure accuracy" section (how to run `npm run eval` on your own table and cases, what the metrics mean,
-  and what the measurements do and do not show) and a tip on specific own-word phrases.
+  a results table with before and after numbers, and what the measurements do and do not show) and a tip on specific
+  own-word phrases.
 
 ## [0.9.0] - 2026-11-10
 

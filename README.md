@@ -286,6 +286,27 @@ List the acceptable skills in `expect`; an empty list marks a prompt that should
 - **recall@3**: the share of expected skills that appear in the hints.
 - **no-match false positives**: the share of empty-`expect` prompts that still got a hint.
 
+### Results so far
+
+Measured on 2026-11-10 with the eval above. Same matcher, same prompts, only the named change differs.
+
+| What changed | Cases | P@1 before | P@1 after | recall@3 before | recall@3 after | No-match false positives |
+|---|---|---|---|---|---|---|
+| Score ranking, synthetic corpus | 56 | 68.9% | 88.9% | 97.0% | 97.8% | 36.4% (unchanged) |
+| Score ranking, real skills (hand-labeled) | 35 | 69.0% | 69.0% | 63.2% | 62.4% | 0% (unchanged) |
+| Own words added, real skills (hand-labeled) | 35 | 69.0% | 93.1% | 63.2% | 76.4% | 0% (unchanged) |
+| Own words added, second set written beforehand | 20 | 46.2% | 92.3% | 38.5% | 69.2% | 0% (unchanged) |
+
+Score ranking costs about 0.3 ms per prompt (6.7 ms to 7.0 ms on a 227-skill table). Own words cost nothing extra.
+
+Read it this way:
+
+- Ordering did not help on real skills. The gain came from prompts that matched no skill at all. Adding specific
+  phrases (English and Indonesian) as own words fixed most of them.
+- The real-skill rows come from one person's setup (227 skills) and labels. Those prompt sets are not published.
+  The second set was written before the own words, but the phrases were chosen knowing it, so part of that gain is
+  fitting. Expect a smaller gain on your own skills, and measure it.
+
 What the numbers mean and do not mean:
 
 - The bundled corpus is synthetic. It shows direction, not how your skills will behave. Write 20 to 30 prompts of your
