@@ -272,7 +272,7 @@ npx skill-autoroute install --model triggers=haiku
 | `install`            | The full setup flow                                            |
 | `regenerate`         | Update triggers for new or changed skills, or for all skills after an update that changes how triggers are written. Keeps your choices. |
 | `scan`               | Scan and find duplicates only. Writes nothing.                 |
-| `list`               | Show skills, on/off state, tools, priority, paths and trigger rules. Supports `--tools` and `--project`. Writes nothing. |
+| `list [<skill>]`     | Show a compact routing table, or one skill's paths, priority and numbered trigger rules. Supports `--tools` and `--project`. Writes nothing. |
 | `set <skill> on|off` | Turn one skill's hints on or off                               |
 | `words [<skill> [add|remove <word>...]]` | Your own trigger words for a skill. Without a skill, lists all of them. |
 | `status`             | Tools, hook state, skill counts, changed skills                |
@@ -292,10 +292,31 @@ Inspect the saved routing configuration:
 npx skill-autoroute list
 npx skill-autoroute list --tools codex
 npx skill-autoroute list --project
+npx skill-autoroute list security-review
 ```
 
 `list` reads the user table by default; `--project` reads only the current project's table.
-It includes disabled skills (marked `off`). Patterns within a rule must all match (AND);
+The summary groups skills by family, with aligned names, on/off state, tools and rule counts.
+Families come from plugin metadata, namespaced names, plugin paths, or the Caveman, Expo, Foreman,
+Superpowers and Vercel name prefixes. Other entries appear under `OTHER SKILLS`.
+Families and their skills are sorted alphabetically, with `OTHER SKILLS` last.
+
+Example layout (your skills and rule counts may differ):
+
+```text
+EXPO
+  SKILL                         STATUS  TOOLS  RULES
+  expo-native-ui                on      codex      4
+  expo-upgrade                  on      codex      4
+
+VERCEL
+  SKILL                         STATUS  TOOLS  RULES
+  vercel-composition-patterns    on      codex      4
+  vercel-optimize                on      codex      3
+```
+
+Use `list <skill>` for paths, priority, custom words and numbered rules; long lines wrap to fit the terminal.
+Both views include disabled skills (marked `off`). Patterns within a rule must all match (AND);
 any rule can trigger the skill (OR). Custom words are another way to match.
 Enabled means eligible for routing on matching prompts, not that the agent has invoked the skill.
 

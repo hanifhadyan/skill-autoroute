@@ -410,22 +410,100 @@ export function setSkill(o, ui, name, state) {
   if (state === 'on' && hits.some((s) => !s.patterns?.length)) ui.log(`${show(name)} has no trigger rules yet, so it gets no hints. Run: npx skill-autoroute regenerate`);
 }
 
-export function list(o, ui) {
+// Wrap long paths and patterns too; a single token must not overflow a narrow terminal.
+function wrapList(text, width, indent = '', continuation = indent) {
+  const out = [];
+  while (text.length > Math.max(1, width - indent.length)) {
+    const room = Math.max(1, width - indent.length);
+    const space = text.lastIndexOf(' ', room);
+    const cut = space > 0 ? space : room;
+    out.push(indent + text.slice(0, cut));
+    text = text.slice(cut + (space > 0 ? 1 : 0));
+    indent = continuation;
+  }
+  out.push(indent + text);
+  return out;
+}
+
+function listFamily(s) {
+  const name = String(s.name ?? '');
+  const plugin = String(s.source ?? '').match(/^plugin:([^@]+)/)?.[1];
+  const packaged = String(s.path ?? '').replace(/\\/g, '/').match(/\/plugins\/.*\/([^/]+)\/[^/]+\/skills\//)?.[1];
+  const prefix = name.match(/^(caveman|expo|foreman|superpowers|vercel)(?:[-:]|$)/)?.[1];
+  return show(plugin || name.match(/^([^:]+):/)?.[1] || packaged || prefix || 'Other skills').toUpperCase();
+}
+
+export function list(o, ui, name) {
   const path = routesPath(scopeOf(o));
   const table = readTable(path);
   if (!table) return ui.log(`no table at ${show(path)}; run install first`);
   const skills = table.skills.filter((s) => s && (!o.tools?.length || o.tools.some((t) => (s.tools ?? [s.tool]).includes(t))));
+  const selected = name ? skills.filter((s) => s.name === name) : skills;
+  if (name && !selected.length) throw new Error(`no skill named "${show(name)}" in this scope for the selected tools`);
   if (!skills.length) return ui.log('No skills in this scope for the selected tools.');
-  ui.log('Routing configuration (on = enabled for matching prompts; not proof of invocation).\nRules are case-insensitive: AND within a rule, OR between rules. Own words also trigger a match.');
-  for (const s of skills) {
-    ui.log(`${show(s.name)}  ${s.enabled ? 'on' : 'off'}  ${(s.tools ?? [s.tool]).map(show).join(', ')}  priority ${show(s.priority ?? 50)}`);
-    if (s.path) ui.log(`  Path: ${show(s.path)}`);
-    if (s.projects?.length) ui.log(`  Projects: ${s.projects.map(show).join(', ')}`);
-    ui.log(s.patterns?.length
-      ? `  Rules: ${s.patterns.map((rule) => `(${rule.map(show).join(' AND ')})`).join(' OR ')}`
-      : '  No trigger rules.');
-    if (s.words?.length) ui.log(`  Own words: ${s.words.map(show).join(', ')}`);
+  const width = Math.max(32, process.stdout.columns || 80) - 4; // room for the interactive logger's gutter
+  const lines = [];
+  const add = (text, indent = '', continuation = indent) => lines.push(...wrapList(text, width, indent, continuation));
+  const tools = (s) => (s.tools ?? [s.tool]).map(show).join(', ') || '-';
+  if (!name) {
+    const toolWidth = Math.max(5, ...skills.map((s) => tools(s).length));
+    const nameWidth = Math.max(1, Math.min(Math.max(5, ...skills.map((s) => show(s.name).length)), width - toolWidth - 19));
+    const narrow = nameWidth < 16 && width < 60;
+    const row = (n, status, tool, rules) => `  ${n.padEnd(nameWidth)}  ${status.padEnd(6)}  ${tool.padEnd(toolWidth)}  ${rules.padStart(5)}`;
+    add(`Skill routes (${scopeOf(o)})`);
+    const groups = new Map();
+    for (const s of skills) {
+      const family = listFamily(s);
+      if (!groups.has(family)) groups.set(family, []);
+      groups.get(family).push(s);
+    }
+    const families = [...groups.keys()].sort((a, b) => (a === 'OTHER SKILLS') - (b === 'OTHER SKILLS') || a.localeCompare(b));
+    for (const family of families) {
+      lines.push('');
+      add(family);
+      if (narrow) lines.push('  SKILL', `  ${'STATUS'.padEnd(6)}  ${'TOOLS'.padEnd(toolWidth)}  RULES`);
+      else lines.push(row('SKILL', 'STATUS', 'TOOLS', 'RULES'));
+      for (const s of groups.get(family).sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
+        if (narrow) {
+          lines.push('');
+          add(show(s.name), '  ');
+          lines.push(`  ${(s.enabled ? 'on' : 'off').padEnd(6)}  ${tools(s).padEnd(toolWidth)}  ${String(s.patterns?.length ?? 0).padStart(5)}`);
+        } else {
+          const chunks = wrapList(show(s.name), nameWidth);
+          lines.push(row(chunks[0], s.enabled ? 'on' : 'off', tools(s), String(s.patterns?.length ?? 0)));
+          lines.push(...chunks.slice(1).map((line) => '  ' + line));
+        }
+      }
+    }
+    lines.push('');
+    add(`${skills.length} skills: ${skills.filter((s) => s.enabled).length} on, ${skills.filter((s) => !s.enabled).length} off`);
+    add('On = eligible for matching prompts; not proof of invocation.');
+    lines.push('');
+    add('Details and rules:');
+    add('npx skill-autoroute list <skill>' + (o.project ? ' --project' : ''), '  ');
+  } else {
+    for (const s of selected) {
+      if (lines.length) lines.push('');
+      add(show(s.name));
+      lines.push('');
+      for (const [label, value] of [
+        ['Status', s.enabled ? 'on' : 'off'], ['Tools', tools(s)], ['Priority', s.priority ?? 50],
+        ['Path', s.path], ['Projects', s.projects?.map(show).join(', ')], ['Own words', s.words?.map(show).join(', ')],
+      ]) if (value !== undefined && value !== '') add(show(value), `  ${(label + ':').padEnd(11)}`, ' '.repeat(13));
+      lines.push('');
+      add('Rules (case-insensitive; OR between numbered rules):');
+      if (!s.patterns?.length) add('No trigger rules.', '  ');
+      for (const [i, rule] of (s.patterns ?? []).entries()) {
+        if (i) lines.push('');
+        for (const [j, pattern] of rule.entries()) {
+          const prefix = j ? '     AND ' : `  ${i + 1}. `;
+          add(show(pattern), prefix, ' '.repeat(prefix.length));
+        }
+      }
+      if (s.words?.length) { lines.push(''); add('Own words also trigger a match.'); }
+    }
   }
+  ui.log(lines.join('\n'));
 }
 
 export function status(o, ui) {
