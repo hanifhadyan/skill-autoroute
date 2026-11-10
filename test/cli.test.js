@@ -91,7 +91,7 @@ const snapshot = (dir) => {
 const json = (p) => JSON.parse(readFileSync(p, 'utf8'));
 const ourHooks = (cfg) => (cfg.hooks?.UserPromptSubmit ?? []).flatMap((g) => g.hooks).filter((x) => x.command.includes('skill-autoroute/route.mjs'));
 
-test('list shows routing states, rules and own words without writing or calling AI', () => {
+test('list shows an aligned summary and selected skill details without writes or AI calls', () => {
   const s = setup();
   try {
     mkdirSync(dirname(s.routes), { recursive: true });
@@ -103,20 +103,88 @@ test('list shows routing states, rules and own words without writing or calling 
     const before = snapshot(s.home);
     const r = s.run('list');
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /review.*on.*claude, codex.*priority 7/);
-    assert.match(r.out, /\/skills\/review\/SKILL.md/);
-    assert.match(r.out, /\(review AND code\) OR \(audit\)/);
-    assert.match(r.out, /Own words: look over/);
-    assert.match(r.out, /Projects: \/work\/app/);
+    assert.match(r.out, /SKILL +STATUS +TOOLS +RULES/);
+    assert.match(r.out, /review +on +claude, codex +2/);
     assert.match(r.out, /disabled.*off/);
-    assert.match(r.out, /No trigger rules/);
-    assert.ok(!r.out.includes('\u001b') && !r.out.includes('line\nbreak'), 'untrusted text cannot control the terminal');
+    assert.doesNotMatch(r.out, /\/skills\/|Rules:|priority/);
+    const lines = r.out.split('\n');
+    const header = lines.find((l) => /SKILL +STATUS/.test(l));
+    for (const name of ['review', 'disabled']) {
+      const row = lines.find((l) => l.trimStart().startsWith(name + ' '));
+      assert.equal(row.indexOf(name === 'review' ? 'on' : 'off'), header.indexOf('STATUS'));
+      assert.equal(row.indexOf('claude'), header.indexOf('TOOLS'));
+    }
+    const detail = s.run('list', 'review');
+    assert.equal(detail.code, 0, detail.out);
+    assert.match(detail.out, /\/skills\/review\/SKILL.md/);
+    assert.match(detail.out, /Priority: +7/);
+    assert.match(detail.out, /1\. review\n +AND code\n\s+2\. audit/);
+    assert.match(detail.out, /Own words: +look over/);
+    assert.match(detail.out, /Projects: +\/work\/app/);
+    assert.doesNotMatch(detail.out, /disabled|unsafe/);
+    assert.match(s.run('list', 'disabled').out, /No trigger rules/);
+    const unsafe = s.run('list', 'unsafe\u001b[31m');
+    assert.equal(unsafe.code, 0, unsafe.out);
+    assert.ok(!unsafe.out.includes('\u001b') && !unsafe.out.includes('line\nbreak'), 'untrusted text cannot control the terminal');
+    const missing = s.run('list', 'unknown');
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.out, /no skill named/);
     assert.deepEqual(snapshot(s.home), before);
     assert.deepEqual(s.readCalls(), []);
     const filtered = s.run('list', '--tools', 'codex');
     assert.equal(filtered.code, 0, filtered.out);
     assert.match(filtered.out, /review/);
     assert.doesNotMatch(filtered.out, /disabled|unsafe/);
+  } finally { s.cleanup(); }
+});
+
+test('list groups families alphabetically, keeps unrelated skills together and filters before grouping', () => {
+  const s = setup();
+  try {
+    mkdirSync(dirname(s.routes), { recursive: true });
+    const entries = [
+      ['vercel-optimize', 'codex'], ['security-review', 'codex'], ['expo-upgrade', 'claude'],
+      ['superpowers:brainstorming', 'codex'], ['vercel-composition-patterns', 'codex'],
+      ['expo-native-ui', 'codex'], ['caveman', 'codex'], ['no-ai-slop', 'codex'],
+      ['custom-check', 'codex', '/home/me/.claude/plugins/cache/market/custom-pack/1.0/skills/custom-check/SKILL.md'],
+    ].map(([name, tool, path]) => ({ name, tool, path, enabled: true, patterns: [] }));
+    writeFileSync(s.routes, JSON.stringify({ skills: entries }));
+    const before = snapshot(s.home);
+    const r = s.run('list');
+    assert.equal(r.code, 0, r.out);
+    const section = (heading) => r.out.split('\n' + heading + '\n')[1]?.split(/\n\n/)[0] ?? '';
+    assert.match(section('VERCEL'), /vercel-composition-patterns[\s\S]*vercel-optimize/);
+    assert.match(section('EXPO'), /expo-native-ui[\s\S]*expo-upgrade/);
+    assert.match(section('SUPERPOWERS'), /superpowers:brainstorming/);
+    assert.match(section('CAVEMAN'), /caveman/);
+    assert.match(section('CUSTOM-PACK'), /custom-check/);
+    assert.match(section('OTHER SKILLS'), /no-ai-slop[\s\S]*security-review/);
+    assert.ok(r.out.indexOf('\nEXPO\n') < r.out.indexOf('\nVERCEL\n'));
+    assert.ok(r.out.indexOf('\nVERCEL\n') < r.out.indexOf('\nOTHER SKILLS\n'));
+    const filtered = s.run('list', '--tools', 'claude');
+    assert.equal(filtered.code, 0, filtered.out);
+    assert.match(filtered.out, /EXPO/);
+    assert.doesNotMatch(filtered.out, /VERCEL|OTHER SKILLS|expo-native-ui/);
+    assert.deepEqual(snapshot(s.home), before);
+  } finally { s.cleanup(); }
+});
+
+test('list wraps long names and detail fields to the terminal width', () => {
+  const s = setup();
+  try {
+    mkdirSync(dirname(s.routes), { recursive: true });
+    const name = 'very-long-skill-name-that-needs-several-lines-in-a-narrow-terminal';
+    writeFileSync(s.routes, JSON.stringify({ skills: [{ name, enabled: true, tools: ['claude', 'codex'], path: '/skills/' + name + '/SKILL.md', patterns: [['\\b(' + 'longpattern'.repeat(12) + ')\\b', 'code']] }] }));
+    for (const columns of [40, 80, 120]) {
+      for (const args of [['list'], ['list', name]]) {
+        const r = spawnSync('node', ['--input-type=module', '-e', `process.stdout.columns = ${columns}; process.argv = ['node', ...${JSON.stringify(args)}]; await import(${JSON.stringify(CLI)});`], {
+          cwd: s.proj, encoding: 'utf8', env: { ...process.env, HOME: s.home },
+        });
+        assert.equal(r.status, 0, r.stderr);
+        for (const line of r.stdout.trimEnd().split('\n')) assert.ok(line.length <= columns, `overflow at ${columns}: ${line}`);
+        assert.ok(r.stdout.includes('very-long-'), 'the skill stays identifiable');
+      }
+    }
   } finally { s.cleanup(); }
 });
 

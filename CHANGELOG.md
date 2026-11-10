@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.8.0] - 2026-11-10
+
+### Added
+
+- `list <skill>` shows one skill's paths, priority, project restrictions, custom words and numbered trigger rules.
+
+### Changed
+
+- `list` now shows a compact table grouped by skill family, with aligned names, on/off states, tools and rule
+  counts. Families and skills sort alphabetically; unrelated skills appear under `OTHER SKILLS`.
+- Long lines wrap to the terminal width. Narrow terminals use a two-line layout, and each view prints as
+  one block to avoid extra blank lines from the interactive logger.
+
 ## [0.7.0] - 2026-11-10
 
 ### Added
@@ -120,6 +133,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.8.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.1...v0.5.0

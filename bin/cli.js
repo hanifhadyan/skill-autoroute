@@ -6,7 +6,7 @@ import * as flow from '../src/flow.js';
 import { STEP_DEFAULTS } from '../src/models.js';
 
 const USAGE = `usage: skill-autoroute <command> [flags]
-commands: install | regenerate | scan | list | set <skill> on|off | words [<skill> [add|remove <word>...]] | status | tokens | bench | uninstall
+commands: install | regenerate | scan | list [<skill>] | set <skill> on|off | words [<skill> [add|remove <word>...]] | status | tokens | bench | uninstall
 flags: --yes  --dry-run  --project  --tools claude,codex  --ai claude|codex|none  --model step=model (repeatable)  --log`;
 
 const COMMANDS = {
