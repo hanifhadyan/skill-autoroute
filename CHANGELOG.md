@@ -18,6 +18,9 @@ Each release on GitHub uses the notes from its section below.
 
 ### Added
 
+- README: a "Measure accuracy" section (how to run `npm run eval` on your own table and cases, what the metrics mean,
+  a results table with before and after numbers, and what the measurements do and do not show) and a tip on specific
+  own-word phrases.
 - Rules you edit by hand in `routes.json` are kept by `regenerate` and `install` (each entry stores a `rulesHash` of
   its generated rules; a mismatch means you edited them). The AI is not asked to rewrite those skills.
 

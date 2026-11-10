@@ -262,6 +262,65 @@ npx skill-autoroute words no-ai-slop remove polish
 - `regenerate` and `install` keep your words. Up to 20 per skill, 60 characters each.
 - You can also edit a skill's rules in `routes.json` by hand. `regenerate` and `install` keep rules you edited (they no longer match the hash stored with the generated rules) and tell you which skills they kept.
 - A word that also fires on ordinary replies (for example `fix` in "please fix this") is allowed, with a warning.
+- Prefer specific phrases ("tests first", "execute the plan") over single common words. In one real setup, a prompt that
+  matched no skill (many non-English prompts, and plain phrasings like "write tests first") got a hint once the
+  phrase was added as an own word.
+
+---
+
+## Measure accuracy
+
+The eval needs a clone of this repo (the `test/` folder is not in the npm package). It runs the hook's matcher on
+labeled prompts. It makes no model call and no network call.
+
+```bash
+npm run eval                                                       # synthetic corpus and fixture table
+npm run eval -- --table ~/.config/skill-autoroute/routes.json --corpus my-cases.json   # your own table and cases
+npm run eval -- --json out.json                                    # also write the numbers to a file
+```
+
+A corpus is a JSON array of `{ "id", "kind": "prompt", "tool": "claude", "text", "expect": ["skill-name", ...] }`.
+List the acceptable skills in `expect`; an empty list marks a prompt that should get no hint. It reports:
+
+- **P@1**: how often the first hint is an expected skill.
+- **P@3**: the share of the (up to 3) hints that are expected.
+- **recall@3**: the share of expected skills that appear in the hints.
+- **no-match false positives**: the share of empty-`expect` prompts that still got a hint.
+
+### Results so far
+
+Measured on 2026-11-10 with the eval above. Same matcher, same prompts, only the named change differs.
+
+| What changed | Cases | P@1 before | P@1 after | recall@3 before | recall@3 after | No-match false positives |
+|---|---|---|---|---|---|---|
+| Score ranking, synthetic corpus | 56 | 68.9% | 88.9% | 97.0% | 97.8% | 36.4% (unchanged) |
+| Score ranking, real skills (hand-labeled) | 35 | 69.0% | 69.0% | 63.2% | 62.4% | 0% (unchanged) |
+| Own words added, real skills (hand-labeled) | 35 | 69.0% | 93.1% | 63.2% | 76.4% | 0% (unchanged) |
+| Own words added, second set written beforehand | 20 | 46.2% | 92.3% | 38.5% | 69.2% | 0% (unchanged) |
+
+On 1,136 real prompts from one developer's history (321 hinted skill-and-prompt pairs, graded blind by Sonnet), hint
+precision was 46.4% with the original generated rules. Rewriting nine skills' rules so the task word and object word sit
+close together (what the generator now asks for) gave about 55%, and kept about 80% of the useful hints. Own words and
+score ranking changed almost nothing on that history. This is a different method from the table above, so compare the
+rows only with each other.
+
+Score ranking costs about 0.3 ms per prompt (6.7 ms to 7.0 ms on a 227-skill table). Own words cost nothing extra.
+
+Read it this way:
+
+- Ordering did not help on real skills. The gain came from prompts that matched no skill at all. Adding specific
+  phrases (English and Indonesian) as own words fixed most of them.
+- The real-skill rows come from one person's setup (227 skills) and labels. Those prompt sets are not published.
+  The second set was written before the own words, but the phrases were chosen knowing it, so part of that gain is
+  fitting. Expect a smaller gain on your own skills, and measure it.
+
+What the numbers mean and do not mean:
+
+- The bundled corpus is synthetic. It shows direction, not how your skills will behave. Write 20 to 30 prompts of your
+  own, with your own skill names, before you trust a change.
+- Score ranking (`SKILL_AUTOROUTE_RANK=score`) raised P@1 on the synthetic corpus and made no difference on a
+  hand-labeled set of real skills. The bigger gain there came from adding own words for prompts that matched nothing.
+- Labels are judgment calls. With about 35 prompts one case is worth about 3 points, so small differences are noise.
 
 ---
 
