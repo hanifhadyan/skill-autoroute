@@ -217,21 +217,37 @@ codex-cli 0.164.0. Your numbers will differ.
 ## Hint quality
 
 A wrong hint costs tokens and teaches the agent to ignore hints, so the trigger rules aim for precise hints, not many
-hints. Measured on 2026-10-28 on 1,616 real prompts from one developer's Claude Code history, with 148 installed skills.
-Sonnet graded 90 sampled prompts blind (was each hinted skill useful for that prompt?). A fixed check has 13 prompts with
-a known answer, 5 of which must get no hint.
+hints. This table shows how often a hint was useful. It was measured on 1,616 real prompts from one developer's Claude
+Code history (148 skills); Sonnet graded 90 of them blind.
 
+| Trigger rules                                        | Hints that were useful | Hint tokens per prompt |
+| ---------------------------------------------------- | ---------------------- | ---------------------- |
+| 0.2.0                                                | 36%                    | 12.9                   |
+| Broad single-word rules                              | 21%                    | 24.1                   |
+| **0.3.0 and later: task word plus object word**      | **59%**                | **10.8**               |
 
-| Trigger rules                              | Precision | Relative recall | Useful / wrong hints | Hint tokens per prompt | Fixed check |
-| ------------------------------------------ | --------- | --------------- | -------------------- | ---------------------- | ----------- |
-| 0.2.0 (haiku)                              | 35.5%     | 50.0%           | 22 / 40              | 12.9                   | 10/13       |
-| Broad single-word rules (haiku)            | 21.0%     | 59.1%           | 26 / 98              | 24.1                   | 9/13        |
-| **0.3.0 and later: task word plus object word (sonnet)** | **59.1%** | **59.1%**   | **26 / 18**          | **10.8**               | **12/13**   |
+Broader rules doubled the hints, but most of the new ones were wrong. Since 0.10.0 the rule generator also asks for the
+task word and the object word to sit close together. On 1,136 prompts from one real history, useful hints rose from
+46% to about 55%, and about 80% of the earlier useful hints were kept (a different sample, so compare rows within one
+line only).
 
+<details>
+<summary>Full numbers for the 2026-10-28 measurement</summary>
 
-Relative recall is the share of all useful hints that any version found. Broader rules doubled the hints but most of the
-new ones were wrong. Guessing the kind of work from the prompt (question, change, risky) to gate or add hints was also
-tested and made hints worse (F1 63.2 down to 55.7), so it is not used.
+| Trigger rules                                | Precision | Relative recall | Useful / wrong hints | Hint tokens per prompt | Fixed check |
+| -------------------------------------------- | --------- | --------------- | -------------------- | ---------------------- | ----------- |
+| 0.2.0 (haiku)                                | 35.5%     | 50.0%           | 22 / 40              | 12.9                   | 10/13       |
+| Broad single-word rules (haiku)              | 21.0%     | 59.1%           | 26 / 98              | 24.1                   | 9/13        |
+| 0.3.0 and later (sonnet)                     | 59.1%     | 59.1%           | 26 / 18              | 10.8                   | 12/13       |
+
+Relative recall is the share of all useful hints that any version found. The fixed check has 13 prompts with a known
+answer, 5 of which must get no hint. Guessing the kind of work from the prompt (question, change, risky) to gate or add
+hints was also tested and made hints worse (F1 63.2 down to 55.7), so it is not used.
+
+</details>
+
+**Speed:** the hook starts in about 50 ms and the matching itself takes under 10 ms on a 227-skill table. A prompt with
+no matching skill adds no tokens.
 
 Examples with 0.3.0 and later (0.4.0 added [your own trigger words](#your-own-trigger-words); the rules are the same):
 
@@ -289,7 +305,19 @@ List the acceptable skills in `expect`; an empty list marks a prompt that should
 
 ### Results so far
 
-Measured on 2026-11-10 with the eval above. Same matcher, same prompts, only the named change differs.
+Measured on 2026-11-10 on one setup (227 skills). Higher is better.
+
+| Change                                              | Test                                 | Before | After |
+| --------------------------------------------------- | ------------------------------------ | ------ | ----- |
+| Rules with close-together words (what 0.10.0 does)  | Hints that were useful, 1,136 real prompts | 46%    | about 55% |
+| Your own trigger words for missed phrases           | Right skill listed first, 35 hand-written prompts | 69%    | 93%   |
+| Score ranking (opt-in, `SKILL_AUTOROUTE_RANK=score`) | Right skill listed first, 35 hand-written prompts | 69%    | 69% (no change) |
+
+In short: fixing rules and adding your own words helps. Reordering the hints did not help on real skills. It helped
+only on the synthetic corpus, which is why it is off by default.
+
+<details>
+<summary>All measurements</summary>
 
 | What changed | Cases | P@1 before | P@1 after | recall@3 before | recall@3 after | No-match false positives |
 |---|---|---|---|---|---|---|
@@ -298,28 +326,20 @@ Measured on 2026-11-10 with the eval above. Same matcher, same prompts, only the
 | Own words added, real skills (hand-labeled) | 35 | 69.0% | 93.1% | 63.2% | 76.4% | 0% (unchanged) |
 | Own words added, second set written beforehand | 20 | 46.2% | 92.3% | 38.5% | 69.2% | 0% (unchanged) |
 
-On 1,136 real prompts from one developer's history (321 hinted skill-and-prompt pairs, graded blind by Sonnet), hint
-precision was 46.4% with the original generated rules. Rewriting nine skills' rules so the task word and object word sit
-close together (what the generator now asks for) gave about 55%, and kept about 80% of the useful hints. Own words and
-score ranking changed almost nothing on that history. This is a different method from the table above, so compare the
-rows only with each other.
-
 Score ranking costs about 0.3 ms per prompt (6.7 ms to 7.0 ms on a 227-skill table). Own words cost nothing extra.
+On 1,136 real prompts (321 hinted skill-and-prompt pairs, graded blind by Sonnet), hint precision was 46.4% with the
+original generated rules and about 55% with nine skills' rules rewritten, keeping about 80% of the useful hints. Own
+words and score ranking changed almost nothing on that history.
 
-Read it this way:
+</details>
 
-- Ordering did not help on real skills. The gain came from prompts that matched no skill at all. Adding specific
-  phrases (English and Indonesian) as own words fixed most of them.
-- The real-skill rows come from one person's setup (227 skills) and labels. Those prompt sets are not published.
-  The second set was written before the own words, but the phrases were chosen knowing it, so part of that gain is
-  fitting. Expect a smaller gain on your own skills, and measure it.
+What these numbers do not show:
 
-What the numbers mean and do not mean:
-
+- They come from one person's setup and labels, and the prompt sets are not published. The second set was written
+  before the own words, but the phrases were chosen knowing it, so part of that gain is fitting. Expect a smaller gain
+  on your own skills, and measure it.
 - The bundled corpus is synthetic. It shows direction, not how your skills will behave. Write 20 to 30 prompts of your
   own, with your own skill names, before you trust a change.
-- Score ranking (`SKILL_AUTOROUTE_RANK=score`) raised P@1 on the synthetic corpus and made no difference on a
-  hand-labeled set of real skills. The bigger gain there came from adding own words for prompts that matched nothing.
 - Labels are judgment calls. With about 35 prompts one case is worth about 3 points, so small differences are noise.
 
 ---
