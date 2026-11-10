@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.9.0] - 2026-11-10
+
+### Added
+
+- `route.mjs suggest --json --context-file <path|->` takes a task as data (stage, role, title, summary, tags,
+  skip list) and prints one JSON line with the selected skills, reasons and suppressed names. No model call.
+- `npm run eval` scores the router on a synthetic labeled corpus: precision@1/3, recall and no-match false
+  positives.
+
+### Changed
+
+- Hints are now ranked by score (own words, rules that fit, pattern specificity, matched text) instead of the static
+  priority number alone. On the synthetic corpus precision@1 rose from 0.69 to 0.89. Set
+  `SKILL_AUTOROUTE_RANK=priority` to keep the old order.
+
 ## [0.8.0] - 2026-11-10
 
 ### Added

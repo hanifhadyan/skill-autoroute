@@ -12,7 +12,7 @@ const run = (skills, rank, prompt = 'fix the postgres migration please') => name
 const broad = sk('broad', 1, [['fix']]);
 const specific = sk('specific', 9, [['postgres', 'migration']]);
 
-test('default rank is priority order', () => {
+test('priority rank keeps the old order', () => {
   assert.deepEqual(run([specific, broad], 'priority'), ['broad', 'specific']);
 });
 
@@ -35,4 +35,8 @@ test('score rank still skips unsafe patterns and non-matches', () => {
   const evil = sk('evil', 1, [['(a+)+$']]);
   const miss = sk('miss', 1, [['nothing here']]);
   assert.deepEqual(run([evil, miss, broad], 'score', 'aaaa fix'), ['broad']);
+});
+
+test('score is the default rank', () => {
+  assert.deepEqual(names(route('fix the postgres migration please', table([broad, specific]), { fs })), ['specific', 'broad']);
 });
