@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.10.1] - 2026-11-10
+
+### Changed
+
+- README: the "Hint quality" and "Measure accuracy" tables are shorter and in plain words (hints that were useful,
+  right skill listed first). The full tables are in collapsed sections, and a speed line was added.
+
 ## [0.10.0] - 2026-11-10
 
 ### Changed
