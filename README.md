@@ -261,6 +261,38 @@ npx skill-autoroute words no-ai-slop remove polish
 - A match on your own words puts that skill first among the hints.
 - `regenerate` and `install` keep your words. Up to 20 per skill, 60 characters each.
 - A word that also fires on ordinary replies (for example `fix` in "please fix this") is allowed, with a warning.
+- Prefer specific phrases ("tests first", "execute the plan") over single common words. In one real setup, a prompt that
+  matched no skill (many non-English prompts, and plain phrasings like "write tests first") got a hint once the
+  phrase was added as an own word.
+
+---
+
+## Measure accuracy
+
+The eval needs a clone of this repo (the `test/` folder is not in the npm package). It runs the hook's matcher on
+labeled prompts. It makes no model call and no network call.
+
+```bash
+npm run eval                                                       # synthetic corpus and fixture table
+npm run eval -- --table ~/.config/skill-autoroute/routes.json --corpus my-cases.json   # your own table and cases
+npm run eval -- --json out.json                                    # also write the numbers to a file
+```
+
+A corpus is a JSON array of `{ "id", "kind": "prompt", "tool": "claude", "text", "expect": ["skill-name", ...] }`.
+List the acceptable skills in `expect`; an empty list marks a prompt that should get no hint. It reports:
+
+- **P@1**: how often the first hint is an expected skill.
+- **P@3**: the share of the (up to 3) hints that are expected.
+- **recall@3**: the share of expected skills that appear in the hints.
+- **no-match false positives**: the share of empty-`expect` prompts that still got a hint.
+
+What the numbers mean and do not mean:
+
+- The bundled corpus is synthetic. It shows direction, not how your skills will behave. Write 20 to 30 prompts of your
+  own, with your own skill names, before you trust a change.
+- Score ranking (`SKILL_AUTOROUTE_RANK=score`) raised P@1 on the synthetic corpus and made no difference on a
+  hand-labeled set of real skills. The bigger gain there came from adding own words for prompts that matched nothing.
+- Labels are judgment calls. With about 35 prompts one case is worth about 3 points, so small differences are noise.
 
 ---
 

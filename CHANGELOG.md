@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.9.1] - 2026-11-10
+
+### Changed
+
+- README: a "Measure accuracy" section (how to run `npm run eval` on your own table and cases, what the metrics mean,
+  and what the measurements do and do not show) and a tip on specific own-word phrases.
+
 ## [0.9.0] - 2026-11-10
 
 ### Added
