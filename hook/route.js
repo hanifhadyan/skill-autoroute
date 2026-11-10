@@ -4,6 +4,7 @@ import { readFileSync, statSync, readdirSync, realpathSync, appendFileSync, mkdi
 import { join, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const MAX_PROMPT = 20000; // defence in depth against a slow pattern
 const MAX_HINTS = 3;
@@ -210,7 +211,7 @@ export function pick(prompt, table, { tool, base, skip, fs = FS, rank = process.
   let out = 'Skills that fit this work (read each SKILL.md before you start): ' + hits.map((s) => `${shownName(s.name)} (${safe(s.path)})`).join('; ') + '.';
   const n = staleCount(table, fs);
   if (n) out += `\n${n} skill${n === 1 ? '' : 's'} changed since the last generate. Run: npx skill-autoroute regenerate`;
-  return { out, count: hits.length, names: hits.map((s) => s.name) };
+  return { out, count: hits.length, names: hits.map((s) => s.name), detail: hits.map((s) => ({ name: s.name, path: s.path, own: ownFits(s, text), scope: Array.isArray(s.projects) ? 'project' : 'global' })) };
 }
 
 export const route = (prompt, table, opts) => pick(prompt, table, opts)?.out ?? null;
@@ -291,12 +292,62 @@ const loadTable = (udir, base) => merge(load(join(udir, 'routes.json')), resolve
 
 // `route.mjs [tool] suggest <session|-> <text...>`: the agent asks for skills in the middle of its work.
 function suggest(udir, args, i) {
+  if (args[i + 1] === '--json') return suggestJson(udir, args, i);
   const tool = i === 1 ? args[0] : undefined;
   const base = process.env.CLAUDE_PROJECT_DIR || process.cwd();
   const table = loadTable(udir, base);
   const hit = table && pick(args.slice(i + 2).join(' '), table, { tool, base });
   process.stdout.write(`${hit ? hit.out : 'No skill fits.'}\n`);
   if (hit) remember(sessionFile(udir, tool, args[i + 1]), hit.names);
+}
+
+// `suggest --json --context-file <path|->`: the same pick, driven by a JSON task description and answered as one JSON line.
+// Every string in the file is data: it is only matched against trigger patterns, never run or put in a shell.
+function suggestJson(udir, args, i) {
+  const t0 = Date.now();
+  const tool = i === 1 ? args[0] : undefined;
+  const done = (o) => process.stdout.write(`${JSON.stringify({ schema_version: 1, ...o, duration_ms: Date.now() - t0 })}\n`);
+  const fail = (error) => done({ status: 'error', error });
+  const f = args[i + 2] === '--context-file' ? args[i + 3] : undefined;
+  if (!f) return fail('bad_args');
+  let raw;
+  try { raw = readFileSync(f === '-' ? 0 : f, 'utf8'); } catch { return fail('unreadable'); }
+  if (raw.length > MAX_PROMPT) return fail('too_large');
+  let c;
+  try { c = JSON.parse(raw); } catch { return fail('bad_json'); }
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return fail('not_object');
+  if (c.schema_version !== 1) return fail('bad_schema_version');
+  const str = (v) => (typeof v === 'string' ? v : '');
+  const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  const task = c.task && typeof c.task === 'object' ? c.task : {};
+  const policy = c.policy && typeof c.policy === 'object' ? c.policy : {};
+  const text = [str(c.stage), str(c.role), str(task.title), str(task.summary), strs(task.tags).join(' ')].filter(Boolean).join(' ');
+  const max = Number.isInteger(policy.max_skills) ? Math.min(MAX_HINTS, Math.max(1, policy.max_skills)) : MAX_HINTS;
+  const file = sessionFile(udir, tool, c.session_id);
+  const known = (file && remembered(file)) || new Set();
+  const skipList = new Set(strs(policy.skip));
+  const base = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const table = loadTable(udir, base);
+  const hit = table && pick(text, table, { tool, base, skip: new Set([...skipList, ...known]) });
+  const detail = hit ? hit.detail.slice(0, max) : [];
+  const selected = detail.map((d) => ({ id: shownName(d.name), path: d.path, scope: d.scope, reason_code: d.own ? 'own_words' : 'pattern' }));
+  // Suppressed: skills that matched this text but were left out for a reason that is cheap to know.
+  const suppressed = [];
+  if (table) {
+    const here = places(base, FS);
+    const names = new Set();
+    for (const s of table.skills) {
+      if (!s.enabled || typeof s.name !== 'string' || !s.name || typeof s.path !== 'string' || !/[\\/]SKILL\.md$/.test(s.path)) continue;
+      if ((tool && !(Array.isArray(s.tools) ? s.tools : [s.tool]).includes(tool)) || !inProject(s, here, FS)) continue;
+      if (!(ownFits(s, text) || fits(s.patterns, text)) || FS.mtime(s.path) === null) continue;
+      const reason_code = names.has(s.name) ? 'duplicate_name' : skipList.has(s.name) ? 'skip_list' : known.has(s.name) ? 'seen_in_session' : null;
+      names.add(s.name);
+      if (reason_code && suppressed.length < 20) suppressed.push({ id: shownName(s.name), reason_code });
+    }
+  }
+  const routing_version = createHash('sha256').update(`${table?.generatedAt}${table?.skills.length}`).digest('hex').slice(0, 12);
+  done({ status: selected.length ? 'ok' : 'no_match', selected, suppressed, routing_version });
+  if (selected.length) remember(file, detail.map((d) => d.name));
 }
 
 function main(self) {
