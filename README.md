@@ -260,6 +260,7 @@ npx skill-autoroute words no-ai-slop remove polish
 - Each word or phrase matches as a whole word, case-insensitive. It is plain text, not a regex.
 - A match on your own words puts that skill first among the hints.
 - `regenerate` and `install` keep your words. Up to 20 per skill, 60 characters each.
+- You can also edit a skill's rules in `routes.json` by hand. `regenerate` and `install` keep rules you edited (they no longer match the hash stored with the generated rules) and tell you which skills they kept.
 - A word that also fires on ordinary replies (for example `fix` in "please fix this") is allowed, with a warning.
 
 ---

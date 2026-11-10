@@ -441,6 +441,33 @@ test('regenerate rebuilds rules for every enabled skill when the table has older
   } finally { s.cleanup(); }
 });
 
+test('regenerate keeps rules the user edited in routes.json and rebuilds the others', () => {
+  const s = setup();
+  try {
+    assert.equal(s.run('install', '--yes', '--tools', 'claude', '--ai', 'claude').code, 0);
+    const t = json(s.routes);
+    assert.ok(t.skills.every((x) => /^[0-9a-f]{16}$/.test(x.rulesHash)), 'every entry stores the hash of its generated rules');
+    const mine = [['\\\\bpolish\\\\b.{0,15}\\\\breadme\\\\b']];
+    t.skills.find((x) => x.name === 'alpha').patterns = mine;
+    writeFileSync(s.routes, JSON.stringify(t));
+    const n = s.readCalls().length;
+    // both skills change on disk, so both would be rebuilt; only the unedited one may be
+    for (const name of ['alpha', 'vibe-security']) writeFileSync(join(s.skills, name, 'SKILL.md'), `---\nname: ${name}\ndescription: Changed. Use when reviewing pull requests.\n---\nNew.\n`);
+    const g = s.run('regenerate', '--yes');
+    assert.equal(g.code, 0, g.out);
+    assert.match(g.out, /kept your edited rules for 1 skill: alpha/);
+    const names = s.readCalls().slice(n).filter((c) => c.kind === 'triggers').flatMap((c) => c.names);
+    assert.ok(!names.includes('alpha') && names.includes('vibe-security'), `AI wrote rules for ${names}`);
+    const by = Object.fromEntries(json(s.routes).skills.map((x) => [x.name, x]));
+    assert.deepEqual(by.alpha.patterns, mine);
+    assert.notDeepEqual(by['vibe-security'].patterns, mine);
+    assert.equal(g.out.includes('undefined'), false);
+    // a second regenerate sees the same edit, not a new one
+    assert.equal(s.run('regenerate', '--yes').code, 0);
+    assert.deepEqual(Object.fromEntries(json(s.routes).skills.map((x) => [x.name, x])).alpha.patterns, mine);
+  } finally { s.cleanup(); }
+});
+
 test('words: add, list, remove own trigger words; the hook uses them; regenerate and install keep them', () => {
   const s = setup();
   try {

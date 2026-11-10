@@ -1,6 +1,7 @@
 // Command logic. bin/cli.js only parses argv and supplies `ui`; tests pass a non-interactive ui.
 import { statSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { relative, sep } from 'node:path';
 import * as claude from './tools/claude.js';
 import * as codex from './tools/codex.js';
@@ -196,10 +197,13 @@ const entry = (r, gen, scope) => {
     scan: { verdict: r.scan.verdict, partial: r.scan.partial, findings: tableFindings(scope, r.skill, r.scan.findings) }, duplicateOf: r.dup?.of ?? null,
   };
 };
+// Every entry stores a hash of the rules as generated. A rule list that no longer matches its hash was edited by the user.
+export const rulesHash = (patterns) => createHash('sha256').update(JSON.stringify(patterns ?? [])).digest('hex').slice(0, 16);
+const edited = (w) => Boolean(w?.rulesHash) && rulesHash(w.patterns) !== w.rulesHash;
 const tableOf = (ctx, skills, roots, log) => ({
   version: 1, generatedAt: new Date().toISOString(),
   generator: { ai: ctx.ai ? ctx.aiName : 'none', model: ctx.ai ? pickModel(ctx.aiName, 'triggers', ctx.overrides).model ?? null : null, overheadPerCall: ctx.overhead, cacheReadPerCall: ctx.cacheOverhead, rules: RULES_VERSION },
-  roots, ...(log ? { log: true } : {}), skills,
+  roots, ...(log ? { log: true } : {}), skills: skills.map((s) => (s.rulesHash ? s : { ...s, rulesHash: rulesHash(s.patterns) })),
 });
 
 // Every tool config must parse before anything is written (throws naming the bad file).
@@ -295,6 +299,7 @@ export async function install(o, ui) {
   const gen = await generate(rows.filter((r) => r.enabled).map((r) => r.skill), ctx, ui);
   const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log);
   keepWords(table, readTable(routesPath(scope)));
+  keepEdited(table, readTable(routesPath(scope)), ui);
   while (!ui.yes) {
     const p = await ui.text('Preview: type a prompt to see its hints (empty to finish)');
     if (!p) break;
@@ -339,18 +344,20 @@ export async function regenerate(o, ui) {
     if (off) ui.log(`${n} turned off: ${show(label(r.scan))}; run \`npx skill-autoroute set ${n} on\` to override`);
     return { ...r, enabled: Boolean(w.enabled) && !off, dup: w.duplicateOf ? { of: w.duplicateOf } : undefined };
   });
-  const gen = await generate([...rows.filter((r) => r.enabled).map((r) => r.skill), ...bare], ctx, ui);
+  const keep = (s) => !edited(was(s)); // rules the user edited are not rewritten
+  const gen = await generate([...rows.filter((r) => r.enabled && keep(r.skill)).map((r) => r.skill), ...bare.filter(keep)], ctx, ui);
   const byPath = new Map(rows.map((r) => [r.skill.skillPath, entry(r, gen, scope)]));
   for (const s of bare) {
     const g = gen.bySkill.get(s.name);
     // a failed AI call must not swap working older rules for keyword rules
     if (was(s).patterns?.length && (!g || gen.fellBack.includes(s.name))) continue;
-    byPath.set(s.skillPath, { ...was(s), priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
+    byPath.set(s.skillPath, { ...was(s), rulesHash: undefined, priority: g?.priority ?? 50, patterns: g?.rules ?? [] });
   }
   // Scope comes from this discovery, not the old entry: enabling a plugin in another project changes no skill file.
   const scoped = ({ projects, ...e }, s) => (s.projects ? { ...e, projects: s.projects } : e);
   const table = tableOf(ctx, skills.map((s) => scoped(byPath.get(s.skillPath) ?? was(s), s)), roots.map(key), old.log);
   keepWords(table, old);
+  keepEdited(table, old, ui);
   // unchanged rules still come from the old generator; after a full rebuild the new model wrote them all
   if (!o.ai && old.generator) table.generator = { ...old.generator, rules: RULES_VERSION, ...(outdated && ctx.ai ? { model: table.generator.model } : {}) };
   printRows(rows, ui);
@@ -364,6 +371,19 @@ export async function regenerate(o, ui) {
 function keepWords(table, old) {
   const words = new Map((old?.skills ?? []).filter((s) => Array.isArray(s.words) && s.words.length).map((s) => [s.path, s.words]));
   for (const s of table.skills) if (words.has(s.path)) s.words = words.get(s.path);
+}
+
+// Rules the user edited in routes.json (they no longer match the stored hash) survive a rebuild, with their priority.
+export function keepEdited(table, old, ui) {
+  const was = new Map((old?.skills ?? []).map((s) => [s.path, s]));
+  const names = [];
+  for (const s of table.skills) {
+    const w = was.get(s.path);
+    if (!edited(w)) continue;
+    Object.assign(s, { patterns: w.patterns, priority: w.priority, rulesHash: w.rulesHash });
+    names.push(show(s.name));
+  }
+  if (names.length) ui?.log(`kept your edited rules for ${names.length} skill${names.length === 1 ? '' : 's'}: ${names.slice(0, 5).join(', ')}${names.length > 5 ? ', ...' : ''}`);
 }
 
 const MAX_OWN_WORDS = 20;
