@@ -37,6 +37,6 @@ test('score rank still skips unsafe patterns and non-matches', () => {
   assert.deepEqual(run([evil, miss, broad], 'score', 'aaaa fix'), ['broad']);
 });
 
-test('score is the default rank', () => {
-  assert.deepEqual(names(route('fix the postgres migration please', table([broad, specific]), { fs })), ['specific', 'broad']);
+test('priority is the default rank', () => {
+  assert.deepEqual(names(route('fix the postgres migration please', table([broad, specific]), { fs })), ['broad', 'specific']);
 });

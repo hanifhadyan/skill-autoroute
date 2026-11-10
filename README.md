@@ -359,7 +359,7 @@ Paths are stored relative to the project, and entries that point outside the pro
 - Project tables can arrive with a clone, so the hook re-checks them. It skips risky patterns and entries outside the
 project, and it cleans skill names.
 - It reads at most 20,000 characters of the prompt.
-- `SKILL_AUTOROUTE_DISABLE=1` turns it off. `SKILL_AUTOROUTE_DEBUG=1` prints errors. `SKILL_AUTOROUTE_RANK=priority` ranks hints by the static priority number only (the default is score ranking).
+- `SKILL_AUTOROUTE_DISABLE=1` turns it off. `SKILL_AUTOROUTE_DEBUG=1` prints errors. `SKILL_AUTOROUTE_RANK=score` ranks hints by score (own words, rules that fit, pattern specificity) instead of the static priority number. Opt-in: on a synthetic corpus it raised precision@1, but on a hand-labeled set of real skills it made no difference.
 
 </details>
 

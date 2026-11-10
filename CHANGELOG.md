@@ -14,12 +14,9 @@ Each release on GitHub uses the notes from its section below.
   skip list) and prints one JSON line with the selected skills, reasons and suppressed names. No model call.
 - `npm run eval` scores the router on a synthetic labeled corpus: precision@1/3, recall and no-match false
   positives.
-
-### Changed
-
-- Hints are now ranked by score (own words, rules that fit, pattern specificity, matched text) instead of the static
-  priority number alone. On the synthetic corpus precision@1 rose from 0.69 to 0.89. Set
-  `SKILL_AUTOROUTE_RANK=priority` to keep the old order.
+- `SKILL_AUTOROUTE_RANK=score` is an opt-in ranking by score (own words, rules that fit, pattern specificity, matched
+  text). The default stays the static priority order: score raised precision@1 from 0.69 to 0.89 on a synthetic
+  corpus but made no difference on a hand-labeled set of real skills.
 
 ## [0.8.0] - 2026-11-10
 
