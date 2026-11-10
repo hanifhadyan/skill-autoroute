@@ -58,6 +58,25 @@ The hook remembers which skills it already named in a session (in `~/.config/ski
 after 7 days). A later prompt, or a resumed round of a headless run (`claude -p --resume`), does not hint them again.
 `suggest` always answers and adds what it names to that memory.
 
+**Machine-readable mode.** For a loop that knows its task as data, pass a JSON file (or `-` for stdin):
+
+```bash
+echo '{"schema_version":1,"session_id":"s1","stage":"build","task":{"title":"write the orders migration","tags":["db"]},"policy":{"max_skills":2,"skip":["x"]}}' \
+  | node ~/.config/skill-autoroute/route.mjs claude suggest --json --context-file -
+```
+
+Input: `schema_version` must be `1`; `session_id`, `stage`, `role`, `task.{title,summary,tags}` and `policy.{max_skills (1 to 3), skip}` are optional.
+The file is at most 20000 characters. Stage, role, title, summary and tags are joined into the match text. Every string is data: it is matched
+against trigger patterns and never run. Output is one JSON line, always exit 0, and no model is called:
+
+```json
+{"schema_version":1,"status":"ok","selected":[{"id":"skill","path":"/.../SKILL.md","scope":"global","reason_code":"pattern"}],"suppressed":[{"id":"x","reason_code":"skip_list"}],"routing_version":"1a2b3c4d5e6f","duration_ms":3}
+```
+
+`status` is `ok`, `no_match` (`selected` is empty) or `error` (`{"schema_version":1,"status":"error","error":"bad_schema_version"}`; codes: `bad_args`, `unreadable`, `too_large`, `bad_json`, `not_object`, `bad_schema_version`).
+`reason_code` is `own_words` (the skill's own trigger words) or `pattern`; `scope` is `project` for a skill limited to project folders. `suppressed` lists matching skills left out as `seen_in_session`, `skip_list` or `duplicate_name`.
+SKILL.md contents are never returned. On `ok`, the selected names go into the session memory like text-mode `suggest`.
+
 ---
 
 ## Quick start
