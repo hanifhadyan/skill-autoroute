@@ -109,18 +109,31 @@ const compile = (src) => {
   try { return new RegExp(src, 'i'); } catch { return null; }
 };
 
-// A rule fits when all its patterns match; a rule with a skipped pattern never fits.
-function fits(rules, text) {
-  if (!Array.isArray(rules)) return false;
-  return rules.some((rule) => {
-    if (!Array.isArray(rule) || !rule.length) return false;
+// A rule fits when all its patterns match; a rule with a skipped pattern never fits. Returns null, or
+// { rules, pats, chars } for the fitting rules (pats/chars: the best rule's pattern count and matched characters).
+// `all` false stops at the first fitting rule (priority ranking only needs a boolean); true counts every rule.
+function fits(rules, text, all = false) {
+  if (!Array.isArray(rules)) return null;
+  let best = null;
+  for (const rule of rules) {
+    if (!Array.isArray(rule) || !rule.length) continue;
+    let chars = 0;
     for (const src of rule) {
       const re = compile(src);
-      if (!re || !re.test(text)) return false;
+      const m = re && re.exec(text);
+      if (!m) { chars = -1; break; }
+      chars += m[0].length;
     }
-    return true;
-  });
+    if (chars < 0) continue;
+    best ||= { rules: 0, pats: 0, chars: 0 };
+    best.rules++;
+    if (rule.length > best.pats || (rule.length === best.pats && chars > best.chars)) { best.pats = rule.length; best.chars = chars; }
+    if (!all) return best;
+  }
+  return best;
 }
+// Score ranking: own-words hit dominates, then rules that fit and patterns in the best rule, then matched characters.
+const score = (own, f) => own * 1e9 + (f ? (f.rules + f.pats) * 1e4 + Math.min(f.chars, 9999) : 0);
 
 // Own words are literal text, so they cannot carry a slow pattern. Edges are lookarounds, not \b, so "c++" still matches.
 export function wordsPattern(words) {
@@ -176,7 +189,7 @@ const inProject = (s, here, fs) => !Array.isArray(s.projects) || s.projects.some
   return here.some((h) => h === root || h.startsWith(root + sep));
 });
 
-export function pick(prompt, table, { tool, base, skip, fs = FS } = {}) {
+export function pick(prompt, table, { tool, base, skip, fs = FS, rank = process.env.SKILL_AUTOROUTE_RANK } = {}) {
   const text = String(prompt).slice(0, MAX_PROMPT);
   const here = places(base, fs);
   const ok = (v) => typeof v === 'string' && v !== '';
@@ -184,8 +197,11 @@ export function pick(prompt, table, { tool, base, skip, fs = FS } = {}) {
   const hits = table.skills
     .filter((s) => s && s.enabled && ok(s.name) && ok(s.path) && /[\\/]SKILL\.md$/.test(s.path) && (!tool || (Array.isArray(s.tools) ? s.tools : [s.tool]).includes(tool)) && inProject(s, here, fs))
     .map((s) => ({ s, own: ownFits(s, text) }))
-    .filter(({ s, own }) => (own || fits(s.patterns, text)) && fs.mtime(s.path) !== null)
-    .sort((a, b) => (b.own - a.own) || ((a.s.priority ?? 1e9) - (b.s.priority ?? 1e9)))
+    .map((e) => (rank === 'score' ? { ...e, f: fits(e.s.patterns, text, true) } : e))
+    .filter((e) => (e.own || (rank === 'score' ? e.f : fits(e.s.patterns, text))) && fs.mtime(e.s.path) !== null)
+    .sort(rank === 'score'
+      ? (a, b) => (score(b.own, b.f) - score(a.own, a.f)) || ((a.s.priority ?? 1e9) - (b.s.priority ?? 1e9)) || (a.s.name < b.s.name ? -1 : a.s.name > b.s.name ? 1 : 0)
+      : (a, b) => (b.own - a.own) || ((a.s.priority ?? 1e9) - (b.s.priority ?? 1e9)))
     .map(({ s }) => s)
     .filter((s) => !seen.has(s.name) && seen.add(s.name) && !skip?.has(s.name))
     .slice(0, MAX_HINTS);
