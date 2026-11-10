@@ -4,7 +4,7 @@ import { readFileSync, statSync, readdirSync, realpathSync, appendFileSync, mkdi
 import { join, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 
 const MAX_PROMPT = 20000; // defence in depth against a slow pattern
 const MAX_HINTS = 3;
@@ -345,7 +345,8 @@ function suggestJson(udir, args, i) {
       if (reason_code && suppressed.length < 20) suppressed.push({ id: shownName(s.name), reason_code });
     }
   }
-  const routing_version = createHash('sha256').update(`${table?.generatedAt}${table?.skills.length}`).digest('hex').slice(0, 12);
+  // crypto loads only here: a static import adds ~5 ms to every prompt's cold start.
+  const routing_version = createRequire(import.meta.url)('node:crypto').createHash('sha256').update(`${table?.generatedAt}${table?.skills.length}`).digest('hex').slice(0, 12);
   done({ status: selected.length ? 'ok' : 'no_match', selected, suppressed, routing_version });
   if (selected.length) remember(file, detail.map((d) => d.name));
 }
