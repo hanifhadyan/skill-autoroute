@@ -1,0 +1,489 @@
+{
+ "version": 1,
+ "generatedAt": "",
+ "roots": [],
+ "skills": [
+  {
+   "name": "api-design",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/api-design/SKILL.md",
+   "enabled": true,
+   "priority": 30,
+   "patterns": [
+    [
+     "\\b(add|create|design|change|update|write|build)\\b",
+     "\\b(rest|api|endpoint|webhook|route)s?\\b"
+    ],
+    [
+     "\\b(pagination|idempotency|idempotent|webhooks?)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "database-migrations",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/database-migrations/SKILL.md",
+   "enabled": true,
+   "priority": 20,
+   "patterns": [
+    [
+     "\\b(migrations?|migrate|migrasi|alter table)\\b"
+    ],
+    [
+     "\\b(add|drop|rename|tambah|hapus)\\b",
+     "\\b(column|table|index|kolom|tabel)\\b"
+    ],
+    [
+     "\\b(schema|database)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "postgres-tuning",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/postgres-tuning/SKILL.md",
+   "enabled": true,
+   "priority": 25,
+   "patterns": [
+    [
+     "\\b(slow|optimi[sz]e|explain|lambat)\\b",
+     "\\b(quer(y|ies)|index|postgres|sql)\\b"
+    ],
+    [
+     "\\bexplain analyze\\b"
+    ]
+   ]
+  },
+  {
+   "name": "deployment-patterns",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/deployment-patterns/SKILL.md",
+   "enabled": true,
+   "priority": 20,
+   "patterns": [
+    [
+     "\\b(deploy|release|rollout|ship|rilis|luncurkan)\\b",
+     "\\b(prod|production|staging)\\b"
+    ],
+    [
+     "\\b(ci|pipeline|docker|kubernetes|helm)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "code-review",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/code-review/SKILL.md",
+   "enabled": true,
+   "priority": 15,
+   "patterns": [
+    [
+     "\\b(review|tinjau|periksa)\\b",
+     "\\b(code|kode|pr|diff|pull request|mr)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "systematic-debugging",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/systematic-debugging/SKILL.md",
+   "enabled": true,
+   "priority": 10,
+   "patterns": [
+    [
+     "\\b(bug|error|crash|stack ?trace|failing|broken|exception|galat|rusak)\\b"
+    ],
+    [
+     "\\b(why|kenapa)\\b",
+     "\\b(fail|gagal|not working)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "test-driven-development",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/test-driven-development/SKILL.md",
+   "enabled": true,
+   "priority": 12,
+   "patterns": [
+    [
+     "\\b(write|add|buat|tambah)\\b",
+     "\\b(tests?|unit tests?|tes|uji)\\b"
+    ],
+    [
+     "\\btdd\\b"
+    ]
+   ]
+  },
+  {
+   "name": "security-audit",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/security-audit/SKILL.md",
+   "enabled": true,
+   "priority": 20,
+   "patterns": [
+    [
+     "\\b(security|vulnerabilit\\w*|xss|csrf|sql injection|owasp|keamanan)\\b"
+    ],
+    [
+     "\\bauth\\w*\\b",
+     "\\b(review|audit)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "auth-patterns",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/auth-patterns/SKILL.md",
+   "enabled": true,
+   "priority": 20,
+   "patterns": [
+    [
+     "\\b(login|authentication|oauth|jwt|lockout|password|sandi)\\b"
+    ],
+    [
+     "\\bsession\\b",
+     "\\b(token|cookie)s?\\b"
+    ]
+   ]
+  },
+  {
+   "name": "frontend-patterns",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/frontend-patterns/SKILL.md",
+   "enabled": true,
+   "priority": 30,
+   "patterns": [
+    [
+     "\\b(react|vue|svelte|component|css|tailwind)\\b"
+    ],
+    [
+     "\\bui\\b"
+    ]
+   ]
+  },
+  {
+   "name": "frontend-design",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/frontend-design/SKILL.md",
+   "enabled": true,
+   "priority": 28,
+   "patterns": [
+    [
+     "\\b(landing page|redesign|layout|mockup)\\b"
+    ],
+    [
+     "\\b(design|desain)\\b",
+     "\\b(page|halaman|screen|website)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "golang-patterns",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/golang-patterns/SKILL.md",
+   "enabled": true,
+   "priority": 35,
+   "patterns": [
+    [
+     "\\b(go|golang|goroutines?)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "python-patterns",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/python-patterns/SKILL.md",
+   "enabled": true,
+   "priority": 35,
+   "patterns": [
+    [
+     "\\b(python|pytest|django|flask|pip)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "refactor",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/refactor/SKILL.md",
+   "enabled": true,
+   "priority": 25,
+   "patterns": [
+    [
+     "\\b(refactor|clean up|restructure|simplify|rapikan)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "pr-description",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/pr-description/SKILL.md",
+   "enabled": true,
+   "priority": 40,
+   "patterns": [
+    [
+     "\\b(pull request|pr|mr)\\b",
+     "\\b(description|deskripsi|open|write)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "brainstorming",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/brainstorming/SKILL.md",
+   "enabled": true,
+   "priority": 5,
+   "patterns": [
+    [
+     "\\b(build|create|add|implement|buat|tambah)\\b"
+    ],
+    [
+     "\\b(feature|fitur|idea|ide)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "writing-plans",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/writing-plans/SKILL.md",
+   "enabled": true,
+   "priority": 6,
+   "patterns": [
+    [
+     "\\bplan\\b",
+     "\\b(implementation|steps|multi-step|rencana)\\b"
+    ],
+    [
+     "\\b(rencana|rencanakan)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "git-worktrees",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/git-worktrees/SKILL.md",
+   "enabled": true,
+   "priority": 45,
+   "patterns": [
+    [
+     "\\b(worktrees?|branch)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "performance",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/performance/SKILL.md",
+   "enabled": true,
+   "priority": 30,
+   "patterns": [
+    [
+     "\\b(slow|performance|latency|speed up|optimi[sz]e|lambat)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "docs-writing",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/docs-writing/SKILL.md",
+   "enabled": true,
+   "priority": 50,
+   "patterns": [
+    [
+     "\\b(readme|documentation|docs)\\b",
+     "\\b(write|update|tulis|perbarui)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "data-viz",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/data-viz/SKILL.md",
+   "enabled": true,
+   "priority": 40,
+   "patterns": [
+    [
+     "\\b(chart|graph|dashboard|plot|grafik)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "incident-response",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/incident-response/SKILL.md",
+   "enabled": true,
+   "priority": 15,
+   "patterns": [
+    [
+     "\\b(outage|incident|downtime|on-?call|postmortem|insiden)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "e2e-testing",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/e2e-testing/SKILL.md",
+   "enabled": true,
+   "priority": 30,
+   "patterns": [
+    [
+     "\\b(e2e|playwright|cypress|end-to-end)\\b"
+    ],
+    [
+     "\\bbrowser\\b",
+     "\\btests?\\b"
+    ]
+   ]
+  },
+  {
+   "name": "mobile-expo",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/mobile-expo/SKILL.md",
+   "enabled": true,
+   "priority": 35,
+   "patterns": [
+    [
+     "\\b(expo|react native|ios|android)\\b"
+    ]
+   ]
+  },
+  {
+   "name": "caveman-compress",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/caveman-compress/SKILL.md",
+   "enabled": true,
+   "priority": 60,
+   "patterns": [
+    [
+     "\\bcompress\\b",
+     "\\b(memory|claude\\.md|todo)\\b"
+    ]
+   ],
+   "words": [
+    "caveman",
+    "terse mode"
+   ]
+  },
+  {
+   "name": "learn",
+   "tool": "claude",
+   "tools": [
+    "claude",
+    "codex"
+   ],
+   "path": "/fake/skills/learn/SKILL.md",
+   "enabled": true,
+   "priority": 55,
+   "patterns": [
+    [
+     "\\blearn(ed|ing)?\\b",
+     "\\b(session|lesson)\\b"
+    ]
+   ],
+   "words": [
+    "/learn",
+    "what did you learn"
+   ]
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "skill-autoroute",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Per-prompt skill router hook for Claude Code and Codex",
   "keywords": [
     "claude-code",
@@ -34,7 +34,8 @@
     "skill"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "eval": "node test/eval/run.js"
   },
   "license": "MIT",
   "dependencies": {
