@@ -176,7 +176,7 @@ const inProject = (s, here, fs) => !Array.isArray(s.projects) || s.projects.some
   return here.some((h) => h === root || h.startsWith(root + sep));
 });
 
-function pick(prompt, table, { tool, base, skip, fs = FS } = {}) {
+export function pick(prompt, table, { tool, base, skip, fs = FS } = {}) {
   const text = String(prompt).slice(0, MAX_PROMPT);
   const here = places(base, fs);
   const ok = (v) => typeof v === 'string' && v !== '';
