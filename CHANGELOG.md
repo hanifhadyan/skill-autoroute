@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.10.0] - 2026-11-10
+
+### Changed
+
+- The rule-writing prompt now asks for a task word and an object word within a short gap (`\b(add|create)\b.{0,20}\bmigrations?\b`)
+  instead of two patterns that match anywhere in the prompt. Two far-apart words fire on casual talk ("change" and
+  "API" in one long message). Measured on 1,136 real prompts with 321 Sonnet-graded hints: rewriting nine skills' rules
+  this way lifted precision from 46.4% to about 55%, and kept 79% of the useful hints. A hand-tuned version of the same
+  rules scored 54.8%. Rules version 5, so the next `regenerate` rebuilds rules with the new prompt.
+
+### Added
+
+- README: a "Measure accuracy" section (how to run `npm run eval` on your own table and cases, what the metrics mean,
+  a results table with before and after numbers, and what the measurements do and do not show) and a tip on specific
+  own-word phrases.
+- Rules you edit by hand in `routes.json` are kept by `regenerate` and `install` (each entry stores a `rulesHash` of
+  its generated rules; a mismatch means you edited them). The AI is not asked to rewrite those skills.
+
 ## [0.9.0] - 2026-11-10
 
 ### Added
