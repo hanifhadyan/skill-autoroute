@@ -410,6 +410,24 @@ export function setSkill(o, ui, name, state) {
   if (state === 'on' && hits.some((s) => !s.patterns?.length)) ui.log(`${show(name)} has no trigger rules yet, so it gets no hints. Run: npx skill-autoroute regenerate`);
 }
 
+export function list(o, ui) {
+  const path = routesPath(scopeOf(o));
+  const table = readTable(path);
+  if (!table) return ui.log(`no table at ${show(path)}; run install first`);
+  const skills = table.skills.filter((s) => s && (!o.tools?.length || o.tools.some((t) => (s.tools ?? [s.tool]).includes(t))));
+  if (!skills.length) return ui.log('No skills in this scope for the selected tools.');
+  ui.log('Routing configuration (on = enabled for matching prompts; not proof of invocation).\nRules are case-insensitive: AND within a rule, OR between rules. Own words also trigger a match.');
+  for (const s of skills) {
+    ui.log(`${show(s.name)}  ${s.enabled ? 'on' : 'off'}  ${(s.tools ?? [s.tool]).map(show).join(', ')}  priority ${show(s.priority ?? 50)}`);
+    if (s.path) ui.log(`  Path: ${show(s.path)}`);
+    if (s.projects?.length) ui.log(`  Projects: ${s.projects.map(show).join(', ')}`);
+    ui.log(s.patterns?.length
+      ? `  Rules: ${s.patterns.map((rule) => `(${rule.map(show).join(' AND ')})`).join(' OR ')}`
+      : '  No trigger rules.');
+    if (s.words?.length) ui.log(`  Own words: ${s.words.map(show).join(', ')}`);
+  }
+}
+
 export function status(o, ui) {
   const scope = scopeOf(o);
   for (const t of findTools()) ui.log(`${t.name}: CLI ${t.cli ? 'found' : 'not found'}, config ${t.configDir ? 'found' : 'not found'}, ${ADAPTERS[t.name].hasHook(scope) ? 'hook installed' : 'no hook'}`);

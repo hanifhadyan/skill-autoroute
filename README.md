@@ -272,6 +272,7 @@ npx skill-autoroute install --model triggers=haiku
 | `install`            | The full setup flow                                            |
 | `regenerate`         | Update triggers for new or changed skills, or for all skills after an update that changes how triggers are written. Keeps your choices. |
 | `scan`               | Scan and find duplicates only. Writes nothing.                 |
+| `list`               | Show skills, on/off state, tools, priority, paths and trigger rules. Supports `--tools` and `--project`. Writes nothing. |
 | `set <skill> on|off` | Turn one skill's hints on or off                               |
 | `words [<skill> [add|remove <word>...]]` | Your own trigger words for a skill. Without a skill, lists all of them. |
 | `status`             | Tools, hook state, skill counts, changed skills                |
@@ -284,6 +285,19 @@ npx skill-autoroute install --model triggers=haiku
 · `--ai claude|codex|none` · `--model step=model` · `--log`
 
 When your skills change, the hint line tells you so. Run `regenerate`.
+
+Inspect the saved routing configuration:
+
+```bash
+npx skill-autoroute list
+npx skill-autoroute list --tools codex
+npx skill-autoroute list --project
+```
+
+`list` reads the user table by default; `--project` reads only the current project's table.
+It includes disabled skills (marked `off`). Patterns within a rule must all match (AND);
+any rule can trigger the skill (OR). Custom words are another way to match.
+Enabled means eligible for routing on matching prompts, not that the agent has invoked the skill.
 
 ---
 

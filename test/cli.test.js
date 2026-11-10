@@ -91,6 +91,55 @@ const snapshot = (dir) => {
 const json = (p) => JSON.parse(readFileSync(p, 'utf8'));
 const ourHooks = (cfg) => (cfg.hooks?.UserPromptSubmit ?? []).flatMap((g) => g.hooks).filter((x) => x.command.includes('skill-autoroute/route.mjs'));
 
+test('list shows routing states, rules and own words without writing or calling AI', () => {
+  const s = setup();
+  try {
+    mkdirSync(dirname(s.routes), { recursive: true });
+    writeFileSync(s.routes, JSON.stringify({ skills: [
+      { name: 'review', enabled: true, tools: ['claude', 'codex'], priority: 7, path: '/skills/review/SKILL.md', patterns: [['review', 'code'], ['audit']], words: ['look over'], projects: ['/work/app'] },
+      { name: 'disabled', enabled: false, tool: 'claude', path: '/skills/disabled/SKILL.md', patterns: [] },
+      { name: 'unsafe\u001b[31m', enabled: true, tool: 'claude', patterns: [['line\nbreak']] },
+    ] }));
+    const before = snapshot(s.home);
+    const r = s.run('list');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /review.*on.*claude, codex.*priority 7/);
+    assert.match(r.out, /\/skills\/review\/SKILL.md/);
+    assert.match(r.out, /\(review AND code\) OR \(audit\)/);
+    assert.match(r.out, /Own words: look over/);
+    assert.match(r.out, /Projects: \/work\/app/);
+    assert.match(r.out, /disabled.*off/);
+    assert.match(r.out, /No trigger rules/);
+    assert.ok(!r.out.includes('\u001b') && !r.out.includes('line\nbreak'), 'untrusted text cannot control the terminal');
+    assert.deepEqual(snapshot(s.home), before);
+    assert.deepEqual(s.readCalls(), []);
+    const filtered = s.run('list', '--tools', 'codex');
+    assert.equal(filtered.code, 0, filtered.out);
+    assert.match(filtered.out, /review/);
+    assert.doesNotMatch(filtered.out, /disabled|unsafe/);
+  } finally { s.cleanup(); }
+});
+
+test('list respects project scope and reports missing or empty tables', () => {
+  const s = setup();
+  try {
+    const missing = s.run('list');
+    assert.equal(missing.code, 0, missing.out);
+    assert.match(missing.out, /no table.*install/);
+    mkdirSync(dirname(s.routes), { recursive: true });
+    writeFileSync(s.routes, JSON.stringify({ skills: [{ name: 'user-only', enabled: true }] }));
+    const project = join(s.proj, '.skill-autoroute', 'routes.json');
+    mkdirSync(dirname(project), { recursive: true });
+    writeFileSync(project, JSON.stringify({ skills: [{ name: 'project-only', enabled: true, tool: 'codex', patterns: [] }] }));
+    const r = s.run('list', '--project');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /project-only/);
+    assert.doesNotMatch(r.out, /user-only/);
+    writeFileSync(project, JSON.stringify({ skills: [] }));
+    assert.match(s.run('list', '--project').out, /No skills/);
+  } finally { s.cleanup(); }
+});
+
 test('install --yes --ai none writes table, hook copy and settings; blocked skill off; hook honours DISABLE', () => {
   const s = setup();
   try {

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.7.0] - 2026-11-10
+
+### Added
+
+- `npx skill-autoroute list` shows saved routing entries with their on/off state, tools, priority, paths,
+  project restrictions, trigger rules and custom words. Supports `--tools` and `--project`; writes nothing
+  and makes no AI calls.
+
 ## [0.6.0] - 2026-10-29
 
 ### Added
@@ -112,6 +120,7 @@ Each release on GitHub uses the notes from its section below.
 - AI and keyword trigger generation, with validation of each generated pattern.
 - Token estimates and a usage report.
 
+[0.7.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/hanifhadyan/skill-autoroute/compare/v0.4.0...v0.4.1
