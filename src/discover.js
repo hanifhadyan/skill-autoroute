@@ -63,10 +63,11 @@ function walk(root, realDir, rel, seen, found, outside, skipped) {
   }
 }
 
-export function discover(dirs) {
+// `ignored` (optional) collects the real folders a `skip` callback left out.
+export function discover(dirs, ignored = []) {
   const skills = [];
   const done = new Map(); // real dir -> skill, so a folder shared by two tools lists both
-  for (const { dir, tool, source, projects, only } of dirs) {
+  for (const { dir, tool, source, projects, only, skip } of dirs) {
     let names;
     try { names = readdirSync(dir).sort(); } catch { continue; }
     if (Array.isArray(only)) names = names.filter((n) => only.includes(n));
@@ -90,6 +91,8 @@ export function discover(dirs) {
         if (!inside(real, sr) || !statSync(sr).isFile()) continue;
         text = readFileSync(sr, 'utf8');
       } catch { continue; }
+      // `skip(name, text)` is true for a skill the tool does not load; another tool listing the same folder still lists it.
+      if (typeof skip === 'function' && skip(parseFrontmatter(text).name || folder, text)) { if (!ignored.includes(real)) ignored.push(real); continue; }
       done.set(real, null);
       const found = [];
       const outside = [];

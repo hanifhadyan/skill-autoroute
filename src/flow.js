@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { relative, sep } from 'node:path';
 import * as claude from './tools/claude.js';
 import * as codex from './tools/codex.js';
+import * as hermes from './tools/hermes.js';
 import { discover } from './discover.js';
 import { scanStatic, label } from './scan/static.js';
 import { aiScan, mergeScan } from './scan/ai.js';
@@ -17,7 +18,9 @@ import { routesPath, reportPath, hookCopyPath, logPath } from './paths.js';
 import { installHookCopy, hookCommand, checkConfig } from './tools/hookconfig.js';
 import { route, staleCount, resolveProject, wordsPattern } from '../hook/route.js';
 
-export const ADAPTERS = { claude, codex };
+export const ADAPTERS = { claude, codex, hermes };
+// Tools whose CLI can run the AI helper steps (Hermes routes prompts but has no schema-checked headless mode).
+const helpers = () => Object.keys(ADAPTERS).filter((n) => typeof ADAPTERS[n].headless === 'function');
 export class Cancel extends Error {}
 
 const BATCH = 20;
@@ -49,7 +52,11 @@ export function findTools() {
 
 export function findSkills(tools, scope) {
   const dirs = tools.flatMap((t) => ADAPTERS[t].skillDirs(scope));
-  return { skills: discover(dirs), roots: dirs.map((d) => d.dir).filter((d) => existsSync(d)) };
+  const ignored = [];
+  const skills = discover(dirs, ignored);
+  // A folder skipped by one tool but listed by another is a known skill, not an ignored one.
+  const listed = new Set(skills.map((s) => s.dir));
+  return { skills, roots: dirs.map((d) => d.dir).filter((d) => existsSync(d)), ignored: ignored.filter((d) => !listed.has(d)) };
 }
 
 // Characters sent: exact trigger prompts; scan and dedupe approximated from file sizes, capped as the modules cap them.
@@ -200,15 +207,19 @@ const entry = (r, gen, scope) => {
 // Every entry stores a hash of the rules as generated. A rule list that no longer matches its hash was edited by the user.
 export const rulesHash = (patterns) => createHash('sha256').update(JSON.stringify(patterns ?? [])).digest('hex').slice(0, 16);
 const edited = (w) => Boolean(w?.rulesHash) && rulesHash(w.patterns) !== w.rulesHash;
-const tableOf = (ctx, skills, roots, log) => ({
+const tableOf = (ctx, skills, roots, log, ignored = []) => ({
   version: 1, generatedAt: new Date().toISOString(),
   generator: { ai: ctx.ai ? ctx.aiName : 'none', model: ctx.ai ? pickModel(ctx.aiName, 'triggers', ctx.overrides).model ?? null : null, overheadPerCall: ctx.overhead, cacheReadPerCall: ctx.cacheOverhead, rules: RULES_VERSION },
-  roots, ...(log ? { log: true } : {}), skills: skills.map((s) => (s.rulesHash ? s : { ...s, rulesHash: rulesHash(s.patterns) })),
+  roots, ...(ignored.length ? { ignored } : {}), ...(log ? { log: true } : {}), skills: skills.map((s) => (s.rulesHash ? s : { ...s, rulesHash: rulesHash(s.patterns) })),
 });
 
 // Every tool config must parse before anything is written (throws naming the bad file).
 export function preflight(scope, tools) {
-  for (const t of tools) { const p = ADAPTERS[t].hookConfig(scope); if (p) checkConfig(p); }
+  for (const t of tools) {
+    const a = ADAPTERS[t];
+    if (a.checkConfig) a.checkConfig(scope);
+    else { const p = a.hookConfig(scope); if (p) checkConfig(p); }
+  }
 }
 
 export function write(scope, table, tools, ctx) {
@@ -230,13 +241,18 @@ export function write(scope, table, tools, ctx) {
 
 // Runs the exact hook command written to the tool config and checks the output shape (empty, or one JSON line with additionalContext).
 export function selfTest(scope, tool) {
+  const a = ADAPTERS[tool];
+  const text = 'skill-autoroute self-test';
   const r = spawnSync(hookCommand(scope, tool), {
-    shell: true, input: JSON.stringify({ prompt: 'skill-autoroute self-test' }), encoding: 'utf8', timeout: 10000,
+    shell: true, input: JSON.stringify(a?.testInput ? a.testInput(text, process.cwd()) : { prompt: text }), encoding: 'utf8', timeout: 10000,
     env: { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() },
   });
   if (r.status !== 0) return false;
   if (!r.stdout.trim()) return true;
-  try { return typeof JSON.parse(r.stdout).hookSpecificOutput.additionalContext === 'string'; } catch { return false; }
+  try {
+    const o = JSON.parse(r.stdout);
+    return a?.outputOk ? a.outputOk(o) : typeof o.hookSpecificOutput.additionalContext === 'string';
+  } catch { return false; }
 }
 
 // Steps 1 to 5 shared by install and scan: tools, AI helper with probe, skills, static scan.
@@ -244,8 +260,8 @@ async function prelude(o, ui) {
   const found = findTools();
   const avail = found.filter((t) => t.cli || t.configDir).map((t) => t.name);
   const tools = o.tools ?? (await ui.multiselect('Tools to route', found.map((t) => ({ value: t.name, label: t.name, hint: t.cli ? 'CLI found' : t.configDir ? 'config only' : 'not found' })), avail));
-  if (!tools.length) throw new Error('no tool chosen; pass --tools claude,codex');
-  const clis = found.filter((t) => t.cli).map((t) => t.name);
+  if (!tools.length) throw new Error('no tool chosen; pass --tools claude,codex,hermes');
+  const clis = found.filter((t) => t.cli && helpers().includes(t.name)).map((t) => t.name);
   const aiName = o.ai ?? (await ui.select('AI helper for scan, duplicates and triggers', [...clis.map((n) => ({ value: n, label: n })), { value: 'none', label: 'none (keywords only)' }], clis.find((n) => tools.includes(n)) ?? clis[0] ?? 'none'));
   const ctx = context(aiName, o);
   if (ctx.ai) {
@@ -261,11 +277,11 @@ async function prelude(o, ui) {
     }
   }
   const scope = scopeOf(o);
-  const { skills, roots } = findSkills(tools, scope);
+  const { skills, roots, ignored } = findSkills(tools, scope);
   const counts = {};
   for (const s of skills) { const k = `${s.tool} ${show(s.source)}`; counts[k] = (counts[k] ?? 0) + 1; }
   ui.log(`skills found: ${skills.length}${Object.keys(counts).length ? ` (${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ')})` : ''}`);
-  return { scope, tools, ctx, skills, roots };
+  return { scope, tools, ctx, skills, roots, ignored };
 }
 
 function dryRun(ctx, skills, ui) {
@@ -291,13 +307,13 @@ function summary(ctx, gen, notes, ui) {
 }
 
 export async function install(o, ui) {
-  const { scope, tools, ctx, skills, roots } = await prelude(o, ui);
+  const { scope, tools, ctx, skills, roots, ignored } = await prelude(o, ui);
   if (o.dryRun) return dryRun(ctx, skills, ui);
   preflight(scope, tools); // fail before spending AI calls
   const scans = await runScans(skills, ctx, ui);
   const rows = await pickRows(buildRows(skills, scans, await runDedupe(skills, ctx, ui)), ui);
   const gen = await generate(rows.filter((r) => r.enabled).map((r) => r.skill), ctx, ui);
-  const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log);
+  const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log, ignored.map(keyOf(scope)));
   keepWords(table, readTable(routesPath(scope)));
   keepEdited(table, readTable(routesPath(scope)), ui);
   while (!ui.yes) {
@@ -329,7 +345,7 @@ export async function regenerate(o, ui) {
   const key = keyOf(scope);
   const prev = new Map(old.skills.map((s) => [s.path, s]));
   const was = (s) => prev.get(key(s.skillPath));
-  const { skills, roots } = findSkills(tools, scope);
+  const { skills, roots, ignored } = findSkills(tools, scope);
   ctx.cacheOverhead = Number(old.generator?.cacheReadPerCall) || 0;
   const fresh = skills.filter((s) => was(s)?.hash !== s.hash);
   // unchanged and enabled but without rules (turned on with `set` after generate), or with rules from an older RULES_VERSION: they only need rules
@@ -355,7 +371,7 @@ export async function regenerate(o, ui) {
   }
   // Scope comes from this discovery, not the old entry: enabling a plugin in another project changes no skill file.
   const scoped = ({ projects, ...e }, s) => (s.projects ? { ...e, projects: s.projects } : e);
-  const table = tableOf(ctx, skills.map((s) => scoped(byPath.get(s.skillPath) ?? was(s), s)), roots.map(key), old.log);
+  const table = tableOf(ctx, skills.map((s) => scoped(byPath.get(s.skillPath) ?? was(s), s)), roots.map(key), old.log, ignored.map(key));
   keepWords(table, old);
   keepEdited(table, old, ui);
   // unchanged rules still come from the old generator; after a full rebuild the new model wrote them all
@@ -553,7 +569,7 @@ const SAMPLES = [
 
 // Ruling R31: the CLI runs with the user's settings so the hook fires; DISABLE=1 gives the baseline.
 export async function bench(o, ui) {
-  const aiName = o.ai ?? findTools().find((t) => t.cli)?.name;
+  const aiName = o.ai ?? findTools().find((t) => t.cli && helpers().includes(t.name))?.name;
   if (!aiName || aiName === 'none') throw new Error('bench needs an AI CLI: pass --ai claude or --ai codex');
   const ctx = context(aiName, o);
   const m = model(ctx, 'probe');

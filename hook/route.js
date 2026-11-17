@@ -1,6 +1,6 @@
-// Per-prompt hook for Claude Code and Codex. Node built-ins only; any error means no output, exit 0.
-// argv[2] names the tool (claude or codex): only that tool's skills are hinted; no argument hints all.
-import { readFileSync, statSync, readdirSync, realpathSync, appendFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
+// Per-prompt hook for Claude Code, Codex and Hermes. Node built-ins only; any error means no output, exit 0.
+// argv[2] names the tool (claude, codex or hermes): only that tool's skills are hinted; no argument hints all.
+import { readFileSync, statSync, readdirSync, realpathSync, appendFileSync, mkdirSync, existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -151,7 +151,8 @@ const ownFits = (s, text) => { const src = wordsPattern(s.words); return Boolean
 export function staleCount(table, fs = FS) {
   const gen = Date.parse(table.generatedAt);
   const entries = table.skills.filter((s) => s && typeof s.path === 'string');
-  const known = new Set(entries.map((s) => dirname(s.path)));
+  // `ignored`: skill folders the tool does not load (turned off, other platform). They are not new skills.
+  const known = new Set([...entries.map((s) => dirname(s.path)), ...(Array.isArray(table.ignored) ? table.ignored : [])]);
   let n = 0;
   for (const { path: p, project } of entries) {
     const m = fs.mtime(p);
@@ -227,6 +228,7 @@ function clean(t) {
     ...t,
     skills: t.skills.filter((s) => s && typeof s === 'object' && !Array.isArray(s)),
     roots: Array.isArray(t.roots) ? t.roots.filter((r) => typeof r === 'string') : [],
+    ignored: Array.isArray(t.ignored) ? t.ignored.filter((r) => typeof r === 'string') : [],
   };
 }
 
@@ -240,6 +242,7 @@ export function resolveProject(table, base) {
   return {
     ...t,
     roots: t.roots.map(abs).filter(under),
+    ignored: t.ignored.map(abs).filter(under),
     skills: t.skills.filter((s) => typeof s.path === 'string' && under(abs(s.path))).map((s) => ({ ...s, path: abs(s.path), project: true })),
   };
 }
@@ -254,6 +257,7 @@ export function merge(user, project) {
     ...u,
     generatedAt: gens[0] ?? '',
     roots: [...new Set([...u.roots, ...p.roots])],
+    ignored: [...new Set([...u.ignored, ...p.ignored])],
     skills: [...u.skills.filter((s) => !names.has(s.name)), ...p.skills],
     ...(u.log === true || p.log === true ? { log: true } : {}),
   };
@@ -351,6 +355,45 @@ function suggestJson(udir, args, i) {
   if (selected.length) remember(file, detail.map((d) => d.name));
 }
 
+// The text of a Hermes user message: a string, or (an image or file turn) a list of content parts.
+export function messageText(m) {
+  if (typeof m === 'string') return m;
+  if (!Array.isArray(m)) return null;
+  const parts = m.map((p) => (typeof p === 'string' ? p : p && p.type === 'text' && typeof p.text === 'string' ? p.text : null)).filter((t) => t !== null);
+  return parts.length ? parts.join('\n') : null;
+}
+
+// Hermes delegated children: `subagent_start` names the child session before it runs, and its turns get no hints
+// (the parent already chose the work). One empty marker file per child, pruned with the session files.
+const childFile = (udir, sid) => sessionFile(udir, 'hermes-child', sid);
+function markChild(udir, sid) {
+  const file = childFile(udir, sid);
+  if (!file) return;
+  try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, ''); } catch { /* a read-only folder only loses the mark */ }
+}
+
+// What the tool sent, as {prompt, sid, base}; null when there is nothing to route.
+// Claude Code and Codex send {prompt, session_id}. Hermes sends {hook_event_name, session_id, cwd, extra: {user_message}}.
+export function readInput(input, tool, udir) {
+  if (!input || typeof input !== 'object') return null;
+  if (tool === 'hermes') {
+    if (input.hook_event_name === 'subagent_start') { markChild(udir, input.extra?.child_session_id); return null; }
+    if (input.hook_event_name !== undefined && input.hook_event_name !== 'pre_llm_call') return null;
+    const sid = input.session_id;
+    if (childFile(udir, sid) && existsSync(childFile(udir, sid))) return null;
+    const prompt = messageText(input.extra?.user_message);
+    if (prompt === null) return null;
+    return { prompt, sid, base: typeof input.cwd === 'string' && input.cwd ? input.cwd : process.cwd() };
+  }
+  if (typeof input.prompt !== 'string') return null;
+  return { prompt: input.prompt, sid: input.session_id, base: process.env.CLAUDE_PROJECT_DIR || process.cwd() };
+}
+
+// Hermes reads {"context"}; Claude Code and Codex read hookSpecificOutput.additionalContext.
+export const hookOutput = (tool, ctx) => (tool === 'hermes'
+  ? { context: ctx }
+  : { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ctx } });
+
 function main(self) {
   if (process.env.SKILL_AUTOROUTE_DISABLE === '1') return;
   const udir = join(homedir(), '.config', 'skill-autoroute');
@@ -361,12 +404,12 @@ function main(self) {
   // Only a Claude user hook counts: a Codex-only user install must not silence the Claude project hook.
   if (self.endsWith(`${sep}.skill-autoroute${sep}route.mjs`) && userClaudeHook(udir)) return;
   try {
-    const { prompt, session_id: sid } = JSON.parse(readFileSync(0, 'utf8'));
-    if (typeof prompt !== 'string') return;
-    const base = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    const tool = args[0];
+    const input = readInput(JSON.parse(readFileSync(0, 'utf8')), tool, udir);
+    if (!input) return;
+    const { prompt, sid, base } = input;
     const table = loadTable(udir, base);
     if (!table) return;
-    const tool = args[0];
     const file = sessionFile(udir, tool, sid);
     const known = file && remembered(file);
     const hit = pick(prompt, table, { tool, base, skip: known ?? undefined });
@@ -377,7 +420,7 @@ function main(self) {
     if (!hit && !tell) return;
     remember(file, hit ? hit.names : []);
     const ctx = [hit?.out, tell].filter(Boolean).join('\n');
-    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: ctx } }) + '\n');
+    process.stdout.write(JSON.stringify(hookOutput(tool, ctx)) + '\n');
     if (process.env.SKILL_AUTOROUTE_LOG === '1' || table.log === true) {
       try {
         mkdirSync(udir, { recursive: true });

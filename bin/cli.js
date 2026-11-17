@@ -7,7 +7,7 @@ import { STEP_DEFAULTS } from '../src/models.js';
 
 const USAGE = `usage: skill-autoroute <command> [flags]
 commands: install | regenerate | scan | list [<skill>] | set <skill> on|off | words [<skill> [add|remove <word>...]] | status | tokens | bench | uninstall
-flags: --yes  --dry-run  --project  --tools claude,codex  --ai claude|codex|none  --model step=model (repeatable)  --log`;
+flags: --yes  --dry-run  --project  --tools claude,codex,hermes  --ai claude|codex|none  --model step=model (repeatable)  --log`;
 
 const COMMANDS = {
   install: flow.install, regenerate: flow.regenerate, scan: flow.scan, set: flow.setSkill, words: flow.setWords,
@@ -23,7 +23,7 @@ function options() {
     },
   });
   const tools = v.tools?.split(',').map((t) => t.trim()).filter(Boolean);
-  for (const t of tools ?? []) if (!flow.ADAPTERS[t]) throw new Error(`unknown tool "${t}" (claude, codex)`);
+  for (const t of tools ?? []) if (!flow.ADAPTERS[t]) throw new Error(`unknown tool "${t}" (claude, codex, hermes)`);
   if (v.ai && !['claude', 'codex', 'none'].includes(v.ai)) throw new Error(`unknown --ai "${v.ai}" (claude, codex, none)`);
   const models = {};
   for (const m of v.model ?? []) {
