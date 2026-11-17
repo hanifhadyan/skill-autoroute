@@ -1,6 +1,6 @@
 {
   "name": "skill-autoroute",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Per-prompt skill router hook for Claude Code, Codex and Hermes",
   "keywords": [
     "claude-code",

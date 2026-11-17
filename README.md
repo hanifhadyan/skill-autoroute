@@ -168,7 +168,8 @@ The optional AI scan can make a result stricter. It can never clear a high findi
 - A scan is marked **partial scan** when a file is unreadable or over 1 MB, a link points outside the folder, the skill
   has `node_modules` or `.git` (never read), or the AI input is cut (about 60,000 characters).
 - A security skill that quotes attack phrases as examples is still flagged. Turn it back on with
-  `set <skill> on`.
+  `set <skill> on`. That choice survives a rescan (`regenerate`, `install`) when the skill changes, as long as every
+  blocking finding is one you already saw (same rule in the same file). A new kind of finding turns it off again.
 - AI steps send skill text to the provider behind your CLI. Triggers send names and descriptions. The deep scan sends
   up to about 60 KB per skill. Skill text is wrapped as untrusted data.
 - Claude runs with no tools. Codex runs read-only with its shell features off

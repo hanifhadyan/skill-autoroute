@@ -152,6 +152,13 @@ export async function runDedupe(skills, ctx, ui) {
   return out;
 }
 
+// Blocking findings as `rule:file` keys. Line numbers are left out: they move with every edit to the file.
+const blockKeys = (scan) => [...new Set((scan?.findings ?? []).filter((f) => f.severity === 'high').map((f) => `${f.rule}:${f.file}`))];
+// A blocked skill starts off, so an old entry that is on and blocked was turned on by the user. A rescan keeps that
+// choice while every blocking finding is one the user already saw (same rule in the same file); a new one turns it off.
+export const userAccepted = (was, scan) => Boolean(was?.enabled) && was.scan?.verdict === 'block' && scan?.verdict === 'block'
+  && blockKeys(scan).every((k) => blockKeys(was.scan).includes(k));
+
 export function buildRows(skills, scans, dupes = new Map()) {
   return skills.map((skill) => {
     const scan = scans.get(skill.skillPath);
@@ -311,11 +318,15 @@ export async function install(o, ui) {
   if (o.dryRun) return dryRun(ctx, skills, ui);
   preflight(scope, tools); // fail before spending AI calls
   const scans = await runScans(skills, ctx, ui);
-  const rows = await pickRows(buildRows(skills, scans, await runDedupe(skills, ctx, ui)), ui);
+  const before = readTable(routesPath(scope));
+  const prior = new Map((before?.skills ?? []).map((s) => [s.path, s]));
+  const rows = await pickRows(buildRows(skills, scans, await runDedupe(skills, ctx, ui)).map((r) => (
+    !r.enabled && !r.dup?.of && userAccepted(prior.get(keyOf(scope)(r.skill.skillPath)), r.scan)
+      ? { ...r, enabled: true, text: `${r.text} · kept on (you turned it on with these findings)` } : r)), ui);
   const gen = await generate(rows.filter((r) => r.enabled).map((r) => r.skill), ctx, ui);
   const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log, ignored.map(keyOf(scope)));
-  keepWords(table, readTable(routesPath(scope)));
-  keepEdited(table, readTable(routesPath(scope)), ui);
+  keepWords(table, before);
+  keepEdited(table, before, ui);
   while (!ui.yes) {
     const p = await ui.text('Preview: type a prompt to see its hints (empty to finish)');
     if (!p) break;
@@ -355,9 +366,11 @@ export async function regenerate(o, ui) {
   const rows = buildRows(fresh, await runScans(fresh, ctx, ui)).map((r) => {
     const w = was(r.skill);
     if (!w) return r;
-    const off = Boolean(w.enabled) && r.scan.verdict === 'block'; // Ruling R35
+    const kept = userAccepted(w, r.scan);
+    const off = Boolean(w.enabled) && r.scan.verdict === 'block' && !kept; // Ruling R35, unless the user already accepted these findings
     const n = show(r.skill.name);
     if (off) ui.log(`${n} turned off: ${show(label(r.scan))}; run \`npx skill-autoroute set ${n} on\` to override`);
+    else if (kept) ui.log(`${n} stays on: you turned it on with the same findings before`);
     return { ...r, enabled: Boolean(w.enabled) && !off, dup: w.duplicateOf ? { of: w.duplicateOf } : undefined };
   });
   const keep = (s) => !edited(was(s)); // rules the user edited are not rewritten
