@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.11.1] - 2026-11-17
+
+### Fixed
+
+- Hermes: notices the gateway delivers as user turns (a finished background process or delegation, marked
+  `[INTERNAL NOTIFICATION`) no longer get hints. They are not the user's work, and their wording (subagent,
+  delegation, process) matched unrelated skills.
+
 ## [0.11.0] - 2026-11-17
 
 ### Added
