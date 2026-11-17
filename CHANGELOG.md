@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
-## [0.11.0] - Unreleased
+## [0.11.0] - 2026-11-17
 
 ### Added
 
