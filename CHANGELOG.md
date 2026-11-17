@@ -20,6 +20,8 @@ Each release on GitHub uses the notes from its section below.
 
 - The AI helper list offers only tools with a headless mode (`claude`, `codex`), even when the `hermes` CLI is on PATH.
 - The pre-install config check and the post-install self-test use the tool's own input and output shape.
+- Skill folders a tool skips (turned off, another platform) are stored as `ignored` in the table, so the hook's
+  "skills changed since the last generate" line no longer counts them as new skills.
 
 ## [0.10.1] - 2026-11-10
 

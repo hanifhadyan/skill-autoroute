@@ -151,7 +151,8 @@ const ownFits = (s, text) => { const src = wordsPattern(s.words); return Boolean
 export function staleCount(table, fs = FS) {
   const gen = Date.parse(table.generatedAt);
   const entries = table.skills.filter((s) => s && typeof s.path === 'string');
-  const known = new Set(entries.map((s) => dirname(s.path)));
+  // `ignored`: skill folders the tool does not load (turned off, other platform). They are not new skills.
+  const known = new Set([...entries.map((s) => dirname(s.path)), ...(Array.isArray(table.ignored) ? table.ignored : [])]);
   let n = 0;
   for (const { path: p, project } of entries) {
     const m = fs.mtime(p);
@@ -227,6 +228,7 @@ function clean(t) {
     ...t,
     skills: t.skills.filter((s) => s && typeof s === 'object' && !Array.isArray(s)),
     roots: Array.isArray(t.roots) ? t.roots.filter((r) => typeof r === 'string') : [],
+    ignored: Array.isArray(t.ignored) ? t.ignored.filter((r) => typeof r === 'string') : [],
   };
 }
 
@@ -240,6 +242,7 @@ export function resolveProject(table, base) {
   return {
     ...t,
     roots: t.roots.map(abs).filter(under),
+    ignored: t.ignored.map(abs).filter(under),
     skills: t.skills.filter((s) => typeof s.path === 'string' && under(abs(s.path))).map((s) => ({ ...s, path: abs(s.path), project: true })),
   };
 }
@@ -254,6 +257,7 @@ export function merge(user, project) {
     ...u,
     generatedAt: gens[0] ?? '',
     roots: [...new Set([...u.roots, ...p.roots])],
+    ignored: [...new Set([...u.ignored, ...p.ignored])],
     skills: [...u.skills.filter((s) => !names.has(s.name)), ...p.skills],
     ...(u.log === true || p.log === true ? { log: true } : {}),
   };

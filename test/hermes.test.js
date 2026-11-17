@@ -6,7 +6,8 @@ import { fakeHome, fakeCli, runHook } from './helpers.js';
 import { discover } from '../src/discover.js';
 import * as hermes from '../src/tools/hermes.js';
 import { messageText, readInput, hookOutput } from '../hook/route.js';
-import { selfTest } from '../src/flow.js';
+import { selfTest, findSkills } from '../src/flow.js';
+import { staleCount, merge, resolveProject } from '../hook/route.js';
 import { installHookCopy, hookCommand } from '../src/tools/hookconfig.js';
 
 // A stand-in `hermes` CLI: `config get --json <key>` and `config set <key> <json>` on $HERMES_HOME/config.json.
@@ -151,6 +152,19 @@ test('hermes.skillDirs leaves out skills for another platform and Kanban-only sk
   skill(join(hh, 'skills', 'devops', 'kept'));
   assert.deepEqual(discover(hermes.skillDirs('user')).map((s) => s.name), ['kept']);
 }, { cfg: {} }));
+
+test('findSkills reports the folders Hermes skips; staleCount does not count them as new skills', () => env(({ hh }) => {
+  skill(join(hh, 'skills', 'cat', 'kept'));
+  skill(join(hh, 'skills', 'cat', 'off'));
+  const { skills, roots, ignored } = findSkills(['hermes'], 'user');
+  assert.deepEqual(skills.map((s) => s.name), ['kept']);
+  assert.deepEqual(ignored, [realpathSync(join(hh, 'skills', 'cat', 'off'))]);
+  const table = { generatedAt: new Date(Date.now() + 60000).toISOString(), roots, skills: [{ name: 'kept', path: skills[0].skillPath }] };
+  assert.equal(staleCount(table), 1, 'without the ignored list the skipped skill looks new');
+  assert.equal(staleCount({ ...table, ignored }), 0);
+  assert.deepEqual(merge({ ...table, ignored }, { skills: [], ignored: ['/p/x'] }).ignored, [...ignored, '/p/x']);
+  assert.deepEqual(resolveProject({ skills: [], ignored: ['a/b', '../out'] }, hh).ignored, [join(realpathSync(hh), 'a/b')]);
+}, { cfg: { skills: { disabled: ['off'] } } }));
 
 const CMD = '"/usr/bin/node" "/h/.config/skill-autoroute/route.mjs" hermes';
 

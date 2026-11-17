@@ -52,7 +52,11 @@ export function findTools() {
 
 export function findSkills(tools, scope) {
   const dirs = tools.flatMap((t) => ADAPTERS[t].skillDirs(scope));
-  return { skills: discover(dirs), roots: dirs.map((d) => d.dir).filter((d) => existsSync(d)) };
+  const ignored = [];
+  const skills = discover(dirs, ignored);
+  // A folder skipped by one tool but listed by another is a known skill, not an ignored one.
+  const listed = new Set(skills.map((s) => s.dir));
+  return { skills, roots: dirs.map((d) => d.dir).filter((d) => existsSync(d)), ignored: ignored.filter((d) => !listed.has(d)) };
 }
 
 // Characters sent: exact trigger prompts; scan and dedupe approximated from file sizes, capped as the modules cap them.
@@ -203,10 +207,10 @@ const entry = (r, gen, scope) => {
 // Every entry stores a hash of the rules as generated. A rule list that no longer matches its hash was edited by the user.
 export const rulesHash = (patterns) => createHash('sha256').update(JSON.stringify(patterns ?? [])).digest('hex').slice(0, 16);
 const edited = (w) => Boolean(w?.rulesHash) && rulesHash(w.patterns) !== w.rulesHash;
-const tableOf = (ctx, skills, roots, log) => ({
+const tableOf = (ctx, skills, roots, log, ignored = []) => ({
   version: 1, generatedAt: new Date().toISOString(),
   generator: { ai: ctx.ai ? ctx.aiName : 'none', model: ctx.ai ? pickModel(ctx.aiName, 'triggers', ctx.overrides).model ?? null : null, overheadPerCall: ctx.overhead, cacheReadPerCall: ctx.cacheOverhead, rules: RULES_VERSION },
-  roots, ...(log ? { log: true } : {}), skills: skills.map((s) => (s.rulesHash ? s : { ...s, rulesHash: rulesHash(s.patterns) })),
+  roots, ...(ignored.length ? { ignored } : {}), ...(log ? { log: true } : {}), skills: skills.map((s) => (s.rulesHash ? s : { ...s, rulesHash: rulesHash(s.patterns) })),
 });
 
 // Every tool config must parse before anything is written (throws naming the bad file).
@@ -273,11 +277,11 @@ async function prelude(o, ui) {
     }
   }
   const scope = scopeOf(o);
-  const { skills, roots } = findSkills(tools, scope);
+  const { skills, roots, ignored } = findSkills(tools, scope);
   const counts = {};
   for (const s of skills) { const k = `${s.tool} ${show(s.source)}`; counts[k] = (counts[k] ?? 0) + 1; }
   ui.log(`skills found: ${skills.length}${Object.keys(counts).length ? ` (${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ')})` : ''}`);
-  return { scope, tools, ctx, skills, roots };
+  return { scope, tools, ctx, skills, roots, ignored };
 }
 
 function dryRun(ctx, skills, ui) {
@@ -303,13 +307,13 @@ function summary(ctx, gen, notes, ui) {
 }
 
 export async function install(o, ui) {
-  const { scope, tools, ctx, skills, roots } = await prelude(o, ui);
+  const { scope, tools, ctx, skills, roots, ignored } = await prelude(o, ui);
   if (o.dryRun) return dryRun(ctx, skills, ui);
   preflight(scope, tools); // fail before spending AI calls
   const scans = await runScans(skills, ctx, ui);
   const rows = await pickRows(buildRows(skills, scans, await runDedupe(skills, ctx, ui)), ui);
   const gen = await generate(rows.filter((r) => r.enabled).map((r) => r.skill), ctx, ui);
-  const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log);
+  const table = tableOf(ctx, rows.map((r) => entry(r, gen, scope)), roots.map(keyOf(scope)), o.log, ignored.map(keyOf(scope)));
   keepWords(table, readTable(routesPath(scope)));
   keepEdited(table, readTable(routesPath(scope)), ui);
   while (!ui.yes) {
@@ -341,7 +345,7 @@ export async function regenerate(o, ui) {
   const key = keyOf(scope);
   const prev = new Map(old.skills.map((s) => [s.path, s]));
   const was = (s) => prev.get(key(s.skillPath));
-  const { skills, roots } = findSkills(tools, scope);
+  const { skills, roots, ignored } = findSkills(tools, scope);
   ctx.cacheOverhead = Number(old.generator?.cacheReadPerCall) || 0;
   const fresh = skills.filter((s) => was(s)?.hash !== s.hash);
   // unchanged and enabled but without rules (turned on with `set` after generate), or with rules from an older RULES_VERSION: they only need rules
@@ -367,7 +371,7 @@ export async function regenerate(o, ui) {
   }
   // Scope comes from this discovery, not the old entry: enabling a plugin in another project changes no skill file.
   const scoped = ({ projects, ...e }, s) => (s.projects ? { ...e, projects: s.projects } : e);
-  const table = tableOf(ctx, skills.map((s) => scoped(byPath.get(s.skillPath) ?? was(s), s)), roots.map(key), old.log);
+  const table = tableOf(ctx, skills.map((s) => scoped(byPath.get(s.skillPath) ?? was(s), s)), roots.map(key), old.log, ignored.map(key));
   keepWords(table, old);
   keepEdited(table, old, ui);
   // unchanged rules still come from the old generator; after a full rebuild the new model wrote them all
