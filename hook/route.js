@@ -372,6 +372,11 @@ function markChild(udir, sid) {
   try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, ''); } catch { /* a read-only folder only loses the mark */ }
 }
 
+// Hermes delivers its own notices (a finished background process or delegation) as user turns. They are not the
+// user's work, so they get no hints. The gateway marks them; these are its fixed openings and marker.
+const HERMES_NOTICE = /^\s*\[(ASYNC DELEGATION|IMPORTANT: Background process)\b|\[INTERNAL NOTIFICATION\b/;
+export const isHermesNotice = (text) => HERMES_NOTICE.test(text);
+
 // What the tool sent, as {prompt, sid, base}; null when there is nothing to route.
 // Claude Code and Codex send {prompt, session_id}. Hermes sends {hook_event_name, session_id, cwd, extra: {user_message}}.
 export function readInput(input, tool, udir) {
@@ -382,7 +387,7 @@ export function readInput(input, tool, udir) {
     const sid = input.session_id;
     if (childFile(udir, sid) && existsSync(childFile(udir, sid))) return null;
     const prompt = messageText(input.extra?.user_message);
-    if (prompt === null) return null;
+    if (prompt === null || isHermesNotice(prompt)) return null;
     return { prompt, sid, base: typeof input.cwd === 'string' && input.cwd ? input.cwd : process.cwd() };
   }
   if (typeof input.prompt !== 'string') return null;

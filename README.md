@@ -449,6 +449,8 @@ trusted project's `.hermes/skills` and `.agents/skills`.
   the user message. No match prints nothing.
 - **Subagents:** a second entry on `subagent_start` records each `delegate_task` child's session id, and the child's
   turns get no hints. The parent already chose the work.
+- **Gateway notices:** turns Hermes itself sends (a finished background process or delegation, marked
+  `[INTERNAL NOTIFICATION`) get no hints.
 - **Config:** the first change backs up `config.yaml` to `config.yaml.bak-skill-autoroute`. Other hooks stay as they are.
 
 </details>
