@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.11.2] - 2026-11-17
+
+### Fixed
+
+- A blocked skill you turned on with `set <skill> on` no longer switches off when the skill file changes and
+  `regenerate` or `install --yes` scans it again. The choice is kept while every blocking finding has the same rule in
+  the same file as before (line numbers may move). A new rule or a finding in another file still turns it off. Agents
+  that edit their own skills (Hermes) change files often, which undid the choice on every edit.
+
 ## [0.11.1] - 2026-11-17
 
 ### Fixed
