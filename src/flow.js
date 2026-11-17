@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { relative, sep } from 'node:path';
 import * as claude from './tools/claude.js';
 import * as codex from './tools/codex.js';
+import * as hermes from './tools/hermes.js';
 import { discover } from './discover.js';
 import { scanStatic, label } from './scan/static.js';
 import { aiScan, mergeScan } from './scan/ai.js';
@@ -17,7 +18,9 @@ import { routesPath, reportPath, hookCopyPath, logPath } from './paths.js';
 import { installHookCopy, hookCommand, checkConfig } from './tools/hookconfig.js';
 import { route, staleCount, resolveProject, wordsPattern } from '../hook/route.js';
 
-export const ADAPTERS = { claude, codex };
+export const ADAPTERS = { claude, codex, hermes };
+// Tools whose CLI can run the AI helper steps (Hermes routes prompts but has no schema-checked headless mode).
+const helpers = () => Object.keys(ADAPTERS).filter((n) => typeof ADAPTERS[n].headless === 'function');
 export class Cancel extends Error {}
 
 const BATCH = 20;
@@ -208,7 +211,11 @@ const tableOf = (ctx, skills, roots, log) => ({
 
 // Every tool config must parse before anything is written (throws naming the bad file).
 export function preflight(scope, tools) {
-  for (const t of tools) { const p = ADAPTERS[t].hookConfig(scope); if (p) checkConfig(p); }
+  for (const t of tools) {
+    const a = ADAPTERS[t];
+    if (a.checkConfig) a.checkConfig(scope);
+    else { const p = a.hookConfig(scope); if (p) checkConfig(p); }
+  }
 }
 
 export function write(scope, table, tools, ctx) {
@@ -230,13 +237,18 @@ export function write(scope, table, tools, ctx) {
 
 // Runs the exact hook command written to the tool config and checks the output shape (empty, or one JSON line with additionalContext).
 export function selfTest(scope, tool) {
+  const a = ADAPTERS[tool];
+  const text = 'skill-autoroute self-test';
   const r = spawnSync(hookCommand(scope, tool), {
-    shell: true, input: JSON.stringify({ prompt: 'skill-autoroute self-test' }), encoding: 'utf8', timeout: 10000,
+    shell: true, input: JSON.stringify(a?.testInput ? a.testInput(text, process.cwd()) : { prompt: text }), encoding: 'utf8', timeout: 10000,
     env: { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() },
   });
   if (r.status !== 0) return false;
   if (!r.stdout.trim()) return true;
-  try { return typeof JSON.parse(r.stdout).hookSpecificOutput.additionalContext === 'string'; } catch { return false; }
+  try {
+    const o = JSON.parse(r.stdout);
+    return a?.outputOk ? a.outputOk(o) : typeof o.hookSpecificOutput.additionalContext === 'string';
+  } catch { return false; }
 }
 
 // Steps 1 to 5 shared by install and scan: tools, AI helper with probe, skills, static scan.
@@ -244,8 +256,8 @@ async function prelude(o, ui) {
   const found = findTools();
   const avail = found.filter((t) => t.cli || t.configDir).map((t) => t.name);
   const tools = o.tools ?? (await ui.multiselect('Tools to route', found.map((t) => ({ value: t.name, label: t.name, hint: t.cli ? 'CLI found' : t.configDir ? 'config only' : 'not found' })), avail));
-  if (!tools.length) throw new Error('no tool chosen; pass --tools claude,codex');
-  const clis = found.filter((t) => t.cli).map((t) => t.name);
+  if (!tools.length) throw new Error('no tool chosen; pass --tools claude,codex,hermes');
+  const clis = found.filter((t) => t.cli && helpers().includes(t.name)).map((t) => t.name);
   const aiName = o.ai ?? (await ui.select('AI helper for scan, duplicates and triggers', [...clis.map((n) => ({ value: n, label: n })), { value: 'none', label: 'none (keywords only)' }], clis.find((n) => tools.includes(n)) ?? clis[0] ?? 'none'));
   const ctx = context(aiName, o);
   if (ctx.ai) {
@@ -553,7 +565,7 @@ const SAMPLES = [
 
 // Ruling R31: the CLI runs with the user's settings so the hook fires; DISABLE=1 gives the baseline.
 export async function bench(o, ui) {
-  const aiName = o.ai ?? findTools().find((t) => t.cli)?.name;
+  const aiName = o.ai ?? findTools().find((t) => t.cli && helpers().includes(t.name))?.name;
   if (!aiName || aiName === 'none') throw new Error('bench needs an AI CLI: pass --ai claude or --ai codex');
   const ctx = context(aiName, o);
   const m = model(ctx, 'probe');

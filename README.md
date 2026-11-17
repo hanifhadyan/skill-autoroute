@@ -4,11 +4,11 @@
 
 **Your agent has dozens of skills. This tells it which one fits the prompt you just typed.**
 
-For Claude Code and Codex · No API key · Zero tokens when nothing matches
+For Claude Code, Codex and Hermes · No API key · Zero tokens when nothing matches
 
 [![npm](https://img.shields.io/npm/v/skill-autoroute?color=cb3837&logo=npm)](https://www.npmjs.com/package/skill-autoroute)
 ![node](https://img.shields.io/badge/node-%E2%89%A520.12-339933?logo=node.js&logoColor=white)
-![tools](https://img.shields.io/badge/works%20with-Claude%20Code%20%7C%20Codex-8A63D2)
+![tools](https://img.shields.io/badge/works%20with-Claude%20Code%20%7C%20Codex%20%7C%20Hermes-8A63D2)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 </div>
@@ -89,7 +89,7 @@ npx skill-autoroute install
 
 The installer walks you through it:
 
-1. Pick your tools: Claude Code, Codex, or both.
+1. Pick your tools: Claude Code, Codex, Hermes, or any mix.
 2. Pick an AI helper: `claude`, `codex`, or `none` (keyword triggers, no AI calls).
 3. Review the skill list. Flagged skills start **unchecked**, with the reason beside the name.
 4. Try test prompts and see which hints they produce.
@@ -98,6 +98,9 @@ The installer walks you through it:
 Each AI step shows a token estimate and asks before it runs.
 
 **Codex users:** after install, open Codex, run `/hooks`, and trust the skill-autoroute hook once.
+
+**Hermes users:** the next time Hermes starts, it asks once to allow the new hook. Say yes. `hermes hooks list` shows
+whether it is allowed. Hermes is a routed tool only: pick `claude`, `codex` or `none` as the AI helper.
 
 ### Prefer to let your agent do it?
 
@@ -108,7 +111,7 @@ Paste this into Claude Code or Codex:
 
 ```text
 Set up skill-autoroute for me. Follow these steps exactly.
-1. Ask me which tools to route (claude, codex, or both) and which AI helper to use (claude, codex, or none).
+1. Ask me which tools to route (claude, codex, hermes, or a mix) and which AI helper to use (claude, codex, or none).
 2. Run: npx skill-autoroute install --dry-run --tools <tools> --ai <ai>
    Show me the whole output, including the token estimates. Do not summarise it.
 3. Ask me whether to go ahead. Wait for a clear yes. If I say no, stop.
@@ -157,7 +160,7 @@ The optional AI scan can make a result stricter. It can never clear a high findi
 
 > [!WARNING]
 > "No issues found" means these rules found nothing. It is **not** a safety guarantee. Read skills you do not trust.
-> Unchecking a skill only removes its hints. Claude Code or Codex still loads the skill.
+> Unchecking a skill only removes its hints. The tool still loads the skill.
 
 <details>
 <summary>More about scan limits</summary>
@@ -380,7 +383,7 @@ npx skill-autoroute install --model triggers=haiku
 | `uninstall`          | Remove the hook, the table and the hook copy                   |
 
 
-**Flags:** `--yes` (accept defaults) · `--dry-run` (estimates only, writes nothing) · `--project` · `--tools claude,codex`
+**Flags:** `--yes` (accept defaults) · `--dry-run` (estimates only, writes nothing) · `--project` · `--tools claude,codex,hermes`
 · `--ai claude|codex|none` · `--model step=model` · `--log`
 
 When your skills change, the hint line tells you so. Run `regenerate`.
@@ -430,6 +433,25 @@ Enabled means eligible for routing on matching prompts, not that the agent has i
 - **Project level** goes into the repository, so teammates get it on clone. It adds a hook to `.claude/settings.json`.
 Paths are stored relative to the project, and entries that point outside the project are skipped.
 - **Codex** has a user-level hook only. That hook still reads the project table of the folder you run Codex in.
+- **Hermes** also has a user-level hook only (`hooks.pre_llm_call` in `~/.hermes/config.yaml`, written with
+`hermes config set`). It reads the project table of the folder Hermes runs in, and `--project` lists the skills in a
+trusted project's `.hermes/skills` and `.agents/skills`.
+
+<details>
+<summary>How the Hermes adapter works</summary>
+
+- **Skills:** it lists `$HERMES_HOME/skills` (default `~/.hermes/skills`) with its category folders, plus every folder in
+  `skills.external_dirs`. It leaves out what Hermes does not load in a normal session: skills in `skills.disabled`,
+  skills for another platform (`platforms:`) and skills limited to special environments such as Kanban workers
+  (`environments:`). It reads the settings with `hermes config get`, so it needs no YAML parser.
+- **Hook:** `pre_llm_call` fires once per user turn, before the model runs. The hook reads the prompt from
+  `extra.user_message` (the text parts on an image or file turn) and replies `{"context": "..."}`, which Hermes adds to
+  the user message. No match prints nothing.
+- **Subagents:** a second entry on `subagent_start` records each `delegate_task` child's session id, and the child's
+  turns get no hints. The parent already chose the work.
+- **Config:** the first change backs up `config.yaml` to `config.yaml.bak-skill-autoroute`. Other hooks stay as they are.
+
+</details>
 
 <details class="orca-details">
 <summary>How the hook stays safe and quiet</summary>
@@ -459,13 +481,14 @@ It removes only its own hook entries. Backups of your config files (`*.bak-skill
 ## Requirements
 
 - Node **20.12+**
-- Claude Code and/or Codex CLI. For AI steps, log in to `claude` or `codex`, or use `--ai none`.
+- Claude Code, Codex and/or Hermes. For AI steps, log in to `claude` or `codex`, or use `--ai none`.
 - Linux or macOS. Windows is untested.
 
 ## Supported tools
 
-Version 1 supports **Claude Code** and **Codex**. These two have both a prompt hook and a headless mode that work with
-your normal login. Notes on Kiro, Cline, opencode, Amp, Cursor, Copilot CLI, Windsurf and Antigravity are in
+Version 1 supports **Claude Code**, **Codex** and **Hermes**. Claude Code and Codex have both a prompt hook and a
+headless mode that work with your normal login. Hermes has the prompt hook (`pre_llm_call`) but is not used as the AI
+helper: its one-shot mode has no schema-checked output and no read-only switch for reading untrusted skill text. Notes on Kiro, Cline, opencode, Amp, Cursor, Copilot CLI, Windsurf and Antigravity are in
 [the design document](docs/specs/2026-10-28-skill-autoroute-design.md#12). Each tool is one adapter file in
 `src/tools/`.
 
@@ -475,7 +498,8 @@ your normal login. Notes on Kiro, Cline, opencode, Amp, Cursor, Copilot CLI, Win
 npm test
 ```
 
-The tests use fake `claude` and `codex` programs and a fake `HOME`. They make no real AI calls.
+The tests use fake `claude`, `codex` and `hermes` programs and a fake `HOME`. They make no real AI calls and never touch
+your real Hermes config.
 
 ## License
 

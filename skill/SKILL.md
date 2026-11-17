@@ -19,7 +19,7 @@ relaying the output. You do not do any of the work yourself.
 
 ## Steps
 
-1. Ask which tools to route (`claude`, `codex`, or both) and which AI helper makes the scan and the triggers (`claude`,
+1. Ask which tools to route (`claude`, `codex`, `hermes`, or a mix) and which AI helper makes the scan and the triggers (`claude`,
    `codex`, or `none` for keyword triggers with no AI calls). If the user does not know, run
    `npx skill-autoroute status` and show which CLIs it found.
 2. Run the dry run, with the answers from step 1:
@@ -48,6 +48,8 @@ relaying the output. You do not do any of the work yourself.
    A skill turned on this way has no trigger rules until `npx skill-autoroute regenerate` runs.
 7. If Codex was chosen, tell the user to run `/hooks` once inside Codex and trust the new hook. Until then Codex does
    not run it.
+8. If Hermes was chosen, tell the user that Hermes asks once to allow the new hook the next time it starts, and that
+   `hermes hooks list` shows whether it is allowed. Hermes cannot be the AI helper; use `claude`, `codex` or `none`.
 
 ## Later
 

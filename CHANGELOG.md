@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Each release on GitHub uses the notes from its section below.
 
+## [0.11.0] - Unreleased
+
+### Added
+
+- Hermes support (`--tools hermes`). The adapter lists `$HERMES_HOME/skills` with its category folders and
+  `skills.external_dirs`, and leaves out skills Hermes does not load (`skills.disabled`, another platform, Kanban-only).
+  The hook goes into `hooks.pre_llm_call` through `hermes config set` and replies `{"context": ...}`. A second entry on
+  `subagent_start` marks `delegate_task` children, whose turns get no hints. Hermes asks once to allow the new hook.
+- `discover()` takes a `skip(name, text)` callback per skill folder, so a tool can leave out skills it does not load.
+
+### Changed
+
+- The AI helper list offers only tools with a headless mode (`claude`, `codex`), even when the `hermes` CLI is on PATH.
+- The pre-install config check and the post-install self-test use the tool's own input and output shape.
+
 ## [0.10.1] - 2026-11-10
 
 ### Changed

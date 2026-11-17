@@ -13,7 +13,7 @@ const BASE_STOP = 'use when user asks code file files help want wants task work 
 const MORE_STOP = `about ahead after before also any all can each from have how into its more new not only other our out over some
 such than that them then there these they this those very what which while will your you using used writing write writes
 building build create add change update error errors handling pattern patterns project projects feature features app apps
-need needs like best practice practices guide guidelines skill skills tool tools agent agents claude codex`;
+need needs like best practice practices guide guidelines skill skills tool tools agent agents claude codex hermes`;
 export const STOP_WORDS = new Set(`${BASE_STOP} ${MORE_STOP}`.split(/\s+/));
 
 // R29: a rule that fires on any of these is a catch-all and is dropped.
