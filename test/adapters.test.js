@@ -121,8 +121,9 @@ test('codex.headless: null model omits -m; failures reject', () => env(async ({ 
 test('installHookCopy copies the hook; hookCommand runs the copy with this node and passes the tool', () => env(async ({ home, proj }) => {
   assert.equal(copyHook('user'), hookCopyPath('user'));
   const copy = hookCopyPath('user');
-  assert.equal(hookCommand('user', 'claude'), `"${process.execPath}" "${copy}" claude`);
-  assert.equal(hookCommand('user', 'codex'), `"${process.execPath}" "${copy}" codex`);
+  const fwd = (s) => s.replaceAll('\\', '/'); // Windows: the command uses `/`, so it still contains the MARK
+  assert.equal(hookCommand('user', 'claude'), `"${fwd(process.execPath)}" "${fwd(copy)}" claude`);
+  assert.equal(hookCommand('user', 'codex'), `"${fwd(process.execPath)}" "${fwd(copy)}" codex`);
   assert.ok(copy.startsWith(home));
   assert.equal(readFileSync(copy, 'utf8'), readFileSync(new URL('../hook/route.js', import.meta.url), 'utf8'));
   copyHook('project');

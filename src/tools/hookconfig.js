@@ -103,6 +103,8 @@ export function installHookCopy(scope) {
 
 // The hook command for one tool; the tool argument makes the hook hint only that tool's skills.
 // User scope runs the installing node by absolute path; project settings are shared in git, so they name `node`.
+// Paths use `/` on Windows too: node, cmd, Git Bash and Hermes all accept them, and the command must contain MARK.
+const slashes = (p) => p.replaceAll('\\', '/');
 export const hookCommand = (scope, tool) => (scope === 'project'
   ? `node "$CLAUDE_PROJECT_DIR/.skill-autoroute/route.mjs" ${tool}`
-  : `"${process.execPath}" "${hookCopyPath(scope)}" ${tool}`);
+  : `"${slashes(process.execPath)}" "${slashes(hookCopyPath(scope))}" ${tool}`);
